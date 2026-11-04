@@ -27,7 +27,7 @@ variable "allowed_cidrs" {
 variable "deployment_type" {
   description = "SINGLE_AZ_1 | SINGLE_AZ_2 | MULTI_AZ_1 | MULTI_AZ_2. Single-AZ is recommended for this test: its management endpoint is reachable over VPC peering."
   type        = string
-  default     = "SINGLE_AZ_2"
+  default     = "SINGLE_AZ_1"
 
   validation {
     condition     = contains(["SINGLE_AZ_1", "SINGLE_AZ_2", "MULTI_AZ_1", "MULTI_AZ_2"], var.deployment_type)
@@ -42,15 +42,28 @@ variable "storage_capacity_gib" {
 }
 
 variable "throughput_capacity_per_ha_pair" {
-  description = "MBps per HA pair. Gen2 (…_2): 384/768/1536/3072/6144. Gen1 (…_1): 128-4096. 1536 is valid on Gen2 at any HA-pair count."
+  description = "MBps per HA pair. Gen1 (…_1): 128/256/512/1024/2048/4096. Gen2 (…_2): 384/768/1536/3072/6144 (SINGLE_AZ_2 with >1 HA pair: 1536/3072/6144)."
   type        = number
-  default     = 1536
+  default     = 128
+
+  validation {
+    condition = (
+      !endswith(var.deployment_type, "_1") ||
+      contains([128, 256, 512, 1024, 2048, 4096], var.throughput_capacity_per_ha_pair)
+    )
+    error_message = "Gen1 deployment types (SINGLE_AZ_1, MULTI_AZ_1) support 128, 256, 512, 1024, 2048 or 4096 MBps."
+  }
 }
 
 variable "ha_pairs" {
   description = "Number of HA pairs (scale-out only on SINGLE_AZ_2)."
   type        = number
   default     = 1
+
+  validation {
+    condition     = var.deployment_type == "SINGLE_AZ_2" || var.ha_pairs == 1
+    error_message = "Only SINGLE_AZ_2 supports more than one HA pair."
+  }
 }
 
 variable "endpoint_ip_address_range" {

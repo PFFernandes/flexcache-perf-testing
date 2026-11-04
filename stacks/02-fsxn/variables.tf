@@ -28,9 +28,9 @@ variable "enable_cache_fsxn" {
 
 variable "origin_fsxn" {
   type = object({
-    deployment_type                 = optional(string, "SINGLE_AZ_2")
+    deployment_type                 = optional(string, "SINGLE_AZ_1")
     storage_capacity_gib            = optional(number, 1024)
-    throughput_capacity_per_ha_pair = optional(number, 1536)
+    throughput_capacity_per_ha_pair = optional(number, 128)
     ha_pairs                        = optional(number, 1)
   })
   default = {}
@@ -38,9 +38,9 @@ variable "origin_fsxn" {
 
 variable "cache_fsxn" {
   type = object({
-    deployment_type                 = optional(string, "SINGLE_AZ_2")
+    deployment_type                 = optional(string, "SINGLE_AZ_1")
     storage_capacity_gib            = optional(number, 1024)
-    throughput_capacity_per_ha_pair = optional(number, 1536)
+    throughput_capacity_per_ha_pair = optional(number, 128)
     ha_pairs                        = optional(number, 1)
   })
   default = {}
