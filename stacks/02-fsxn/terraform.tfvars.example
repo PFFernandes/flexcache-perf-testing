@@ -1,8 +1,9 @@
 # Optional: copy to terraform.tfvars.
 
-# Step 1: origin only. Step 2: set to true and apply again to add the cache.
+# Step 1: FSx for ONTAP Origin only. Step 2: set to true and apply again to add the FSx for ONTAP Cache.
 enable_cache_fsxn = false
 
+# FSx for ONTAP Origin
 origin_fsxn = {
   deployment_type                 = "SINGLE_AZ_1"
   storage_capacity_gib            = 1024
@@ -10,6 +11,7 @@ origin_fsxn = {
   ha_pairs                        = 1
 }
 
+# FSx for ONTAP Cache
 cache_fsxn = {
   deployment_type                 = "SINGLE_AZ_1"
   storage_capacity_gib            = 1024

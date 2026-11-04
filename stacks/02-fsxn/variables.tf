@@ -19,7 +19,7 @@ variable "cache_region" {
 # --- toggles ---------------------------------------------------------------
 
 variable "enable_cache_fsxn" {
-  description = "false = origin FSxN only. Flip to true and re-apply to add the cache FSxN (origin is untouched)."
+  description = "false = FSx for ONTAP Origin only. Flip to true and re-apply to add the FSx for ONTAP Cache (the Origin is untouched)."
   type        = bool
   default     = false
 }
@@ -27,6 +27,7 @@ variable "enable_cache_fsxn" {
 # --- sizing (origin and cache sized independently, so you can test e.g. a smaller cache) ---
 
 variable "origin_fsxn" {
+  description = "Sizing of the FSx for ONTAP Origin."
   type = object({
     deployment_type                 = optional(string, "SINGLE_AZ_1")
     storage_capacity_gib            = optional(number, 1024)
@@ -37,6 +38,7 @@ variable "origin_fsxn" {
 }
 
 variable "cache_fsxn" {
+  description = "Sizing of the FSx for ONTAP Cache."
   type = object({
     deployment_type                 = optional(string, "SINGLE_AZ_1")
     storage_capacity_gib            = optional(number, 1024)

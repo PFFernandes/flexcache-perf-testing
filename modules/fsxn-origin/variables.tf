@@ -1,5 +1,5 @@
 variable "name" {
-  description = "File system name, e.g. flexcache-perf-origin."
+  description = "FSx for ONTAP Origin file system name, e.g. flexcache-perf-origin."
   type        = string
 }
 
@@ -73,12 +73,13 @@ variable "endpoint_ip_address_range" {
 }
 
 variable "svm_name" {
-  description = "Name of the SVM created on this file system."
+  description = "Name of the SVM created on the FSx for ONTAP Origin."
   type        = string
+  default     = "svm_origin"
 }
 
 variable "volumes" {
-  description = "Regular FlexVol volumes to create (origin side). The FlexCache volume is NOT created here; stacks/04-flexcache creates it through the ONTAP API."
+  description = "Origin FlexVol volumes (hold the test data set; the FlexCache on the FSx for ONTAP Cache points at them)."
   type = map(object({
     size_gib                   = number
     junction_path              = string

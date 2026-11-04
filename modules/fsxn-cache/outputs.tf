@@ -1,5 +1,5 @@
 output "security_group_id" {
-  description = "Security group attached to the file system (NFS, ONTAP management, intercluster)."
+  description = "Security group attached to the FSx for ONTAP Cache (NFS, ONTAP management, intercluster)."
   value       = aws_security_group.fsxn.id
 }
 
@@ -11,4 +11,3 @@ output "security_group_id" {
 #   svm_id / svm_name
 #   svm_nfs_ip            SVM endpoints[0].nfs[0].ip_addresses[0]
 #   fsxadmin_secret_arn
-#   volumes               map(name => { id, junction_path })

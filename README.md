@@ -29,12 +29,13 @@ create manually.
 ├── modules/                    reusable building blocks (no backend, no provider config)
 │   ├── network/                one VPC: subnets, route table, NAT (opt), S3 endpoint     ✅ implemented
 │   ├── vpc-peering/            peering + routes, same- or cross-region                   ✅ implemented
-│   ├── fsxn/                   FSxN file system + SVM + volumes + SG + secret            🔲 interface only
+│   ├── fsxn-origin/            FSx for ONTAP Origin: FS + SVM + origin vol + SG + secret 🔲 SG only
+│   ├── fsxn-cache/             FSx for ONTAP Cache: FS + SVM + SG + secret (no volumes)  🔲 SG only
 │   ├── ec2-client/             AL2023 test client, SSM access, fio/nfs-utils             🔲 interface only
 │   └── ontap-flexcache/        cluster peer + SVM peer + FlexCache (ONTAP provider)      🔲 interface only
 ├── stacks/                     what you actually deploy – one local state file per stack
 │   ├── 01-landing-zone/        origin VPC + cache VPC + peering [+ bastion peering]     ✅
-│   ├── 02-fsxn/                origin FSxN  [+ cache FSxN if enable_cache_fsxn]          wired
+│   ├── 02-fsxn/                FSx for ONTAP Origin [+ Cache if enable_cache_fsxn]       wired
 │   ├── 03-ec2/                 origin client [+ cache client if enable_cache_ec2]        wired
 │   └── 04-flexcache/           ONTAP: peering + FlexCache volume                         wired
 ├── scripts/
@@ -66,7 +67,7 @@ enabled"). Stacks read each other's outputs from the local state files:
 | What | Where | Default |
 |---|---|---|
 | Cache VPC + peering | `01-landing-zone` | always created (free, except NAT) |
-| Cache FSxN | `02-fsxn` → `enable_cache_fsxn` | `false` |
+| FSx for ONTAP Cache | `02-fsxn` → `enable_cache_fsxn` | `false` |
 | Cache EC2 client | `03-ec2` → `enable_cache_ec2` | `false` |
 | FlexCache volume | `04-flexcache` | only run it once the cache FSxN exists |
 

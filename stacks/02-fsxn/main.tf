@@ -1,6 +1,6 @@
 # Layer 2 - FSx for ONTAP.
-#   Origin FSxN: always.
-#   Cache FSxN:  only when enable_cache_fsxn = true.
+#   FSx for ONTAP Origin (modules/fsxn-origin): always.
+#   FSx for ONTAP Cache  (modules/fsxn-cache):  only when enable_cache_fsxn = true.
 # Reads VPC/subnet IDs from the 01-landing-zone state.
 
 data "terraform_remote_state" "lz" {
@@ -22,8 +22,9 @@ locals {
   ])
 }
 
+# --- FSx for ONTAP Origin ----------------------------------------------------
 module "fsxn_origin" {
-  source    = "../../modules/fsxn"
+  source    = "../../modules/fsxn-origin"
   providers = { aws = aws.origin }
 
   name            = "${var.project}-origin"
@@ -46,10 +47,11 @@ module "fsxn_origin" {
   }
 }
 
+# --- FSx for ONTAP Cache -----------------------------------------------------
 module "fsxn_cache" {
   count = var.enable_cache_fsxn ? 1 : 0
 
-  source    = "../../modules/fsxn"
+  source    = "../../modules/fsxn-cache"
   providers = { aws = aws.cache }
 
   name            = "${var.project}-cache"
@@ -64,5 +66,5 @@ module "fsxn_cache" {
   ha_pairs                        = var.cache_fsxn.ha_pairs
 
   svm_name = "svm_cache"
-  volumes  = {} # the FlexCache volume is created by stacks/04-flexcache via the ONTAP API
+  # No volumes: the FlexCache volume is created by stacks/04-flexcache via the ONTAP API.
 }

@@ -1,3 +1,8 @@
+# FSx for ONTAP Cache
+# The file system that hosts the FlexCache volume. This module creates NO
+# volumes: the FlexCache volume is created by stacks/04-flexcache through the
+# ONTAP API, pointing at a volume on the FSx for ONTAP Origin (modules/fsxn-origin).
+#
 # TODO (layer 2) - resources this module will still create:
 #
 #   random_password.fsxadmin
@@ -5,13 +10,13 @@
 #   aws_fsx_ontap_file_system.this                  subnet_ids: first 1 (Single-AZ) or 2 (Multi-AZ),
 #                                                   security_group_ids = [aws_security_group.fsxn.id]
 #   aws_fsx_ontap_storage_virtual_machine.this      var.svm_name
-#   aws_fsx_ontap_volume.this (for_each var.volumes)
 #
 # Outputs (see outputs.tf) expose the management + intercluster IPs that
 # stacks/04-flexcache needs for the ONTAP provider and cluster peering.
 
 # --- Security group ----------------------------------------------------------
 # NFS (v3 + v4.x) plus what FlexCache and the ONTAP management API need.
+# Kept identical to modules/fsxn-origin so both sides accept the same traffic.
 # Port list follows the AWS "File system access control with Amazon VPC" guide for FSx for ONTAP.
 
 locals {
@@ -47,7 +52,7 @@ locals {
 
 resource "aws_security_group" "fsxn" {
   name        = "${var.name}-fsxn"
-  description = "FSx for ONTAP ${var.name}: NFS, ONTAP management and intercluster (FlexCache)"
+  description = "FSx for ONTAP Cache ${var.name}: NFS, ONTAP management and intercluster (FlexCache)"
   vpc_id      = var.vpc_id
 
   tags = merge(var.tags, { Name = "${var.name}-fsxn" })
