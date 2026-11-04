@@ -1,6 +1,6 @@
 # FSx for ONTAP Origin
 # The file system that holds the source data set. FlexCache on the
-# FSx for ONTAP Cache (modules/fsxn-cache) points at the volumes created here.
+# FSx for ONTAP Cache (modules/04-fsxn-cache) points at the volumes created here.
 #
 # TODO (layer 2) - resources this module will still create:
 #
@@ -16,7 +16,7 @@
 
 # --- Security group ----------------------------------------------------------
 # NFS (v3 + v4.x) plus what FlexCache and the ONTAP management API need.
-# Kept identical to modules/fsxn-cache so both sides accept the same traffic.
+# Kept identical to modules/04-fsxn-cache so both sides accept the same traffic.
 # Port list follows the AWS "File system access control with Amazon VPC" guide for FSx for ONTAP.
 
 locals {

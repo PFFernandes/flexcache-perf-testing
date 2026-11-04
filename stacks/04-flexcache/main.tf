@@ -34,7 +34,7 @@ data "aws_secretsmanager_secret_version" "cache_fsxadmin" {
 }
 
 module "flexcache" {
-  source = "../../modules/ontap-flexcache"
+  source = "../../modules/06-ontap-flexcache"
 
   origin_cx_profile = "origin"
   cache_cx_profile  = "cache"

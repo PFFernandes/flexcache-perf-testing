@@ -1,4 +1,4 @@
-# modules/ec2-client
+# modules/05-ec2-client
 
 Linux test client (Amazon Linux 2023). Called by `stacks/03-ec2` once for the origin and,
 when `enable_cache_ec2 = true`, once for the cache.

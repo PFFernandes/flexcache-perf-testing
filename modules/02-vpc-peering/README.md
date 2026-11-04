@@ -1,11 +1,11 @@
-# modules/vpc-peering
+# modules/02-vpc-peering
 
 Peers the origin VPC (requester) with the cache VPC (accepter) and adds routes on both sides.
 Works same-region or cross-region. Needs two provider aliases:
 
 ```hcl
 module "peering" {
-  source    = "../../modules/vpc-peering"
+  source    = "../../modules/02-vpc-peering"
   providers = { aws.requester = aws.origin, aws.accepter = aws.cache }
   # ...
 }

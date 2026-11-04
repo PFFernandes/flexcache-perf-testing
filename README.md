@@ -27,12 +27,12 @@ create manually.
 ```
 .
 ├── modules/                    reusable building blocks (no backend, no provider config)
-│   ├── network/                one VPC: subnets, route table, NAT (opt), S3 endpoint     ✅ implemented
-│   ├── vpc-peering/            peering + routes, same- or cross-region                   ✅ implemented
-│   ├── fsxn-origin/            FSx for ONTAP Origin: FS + SVM + origin vol + SG + secret 🔲 SG only
-│   ├── fsxn-cache/             FSx for ONTAP Cache: FS + SVM + SG + secret (no volumes)  🔲 SG only
-│   ├── ec2-client/             AL2023 test client, SSM access, fio/nfs-utils             🔲 interface only
-│   └── ontap-flexcache/        cluster peer + SVM peer + FlexCache (ONTAP provider)      🔲 interface only
+│   ├── 01-network/             one VPC: subnets, route table, NAT (opt), S3 endpoint     ✅ implemented
+│   ├── 02-vpc-peering/         peering + routes, same- or cross-region                   ✅ implemented
+│   ├── 03-fsxn-origin/         FSx for ONTAP Origin: FS + SVM + origin vol + SG + secret 🔲 SG only
+│   ├── 04-fsxn-cache/          FSx for ONTAP Cache: FS + SVM + SG + secret (no volumes)  🔲 SG only
+│   ├── 05-ec2-client/          AL2023 test client, SSM access, fio/nfs-utils             🔲 interface only
+│   └── 06-ontap-flexcache/     cluster peer + SVM peer + FlexCache (ONTAP provider)      🔲 interface only
 ├── stacks/                     what you actually deploy – one local state file per stack
 │   ├── 01-landing-zone/        origin VPC + cache VPC + peering [+ bastion peering]     ✅
 │   ├── 02-fsxn/                FSx for ONTAP Origin [+ Cache if enable_cache_fsxn]       wired
@@ -52,6 +52,36 @@ enabled"). Stacks read each other's outputs from the local state files:
 ```
 01-landing-zone ──► 02-fsxn ──► 04-flexcache
         └─────────► 03-ec2
+```
+
+## Creation order
+
+Stacks and modules are both numbered in the order they are created. A number only ever depends on
+lower numbers, so deploy top-down and destroy bottom-up.
+
+**Stacks** (each has its own state; deploy `01` → `04`, destroy `04` → `01`):
+
+| # | Stack | Depends on | Calls modules |
+|---|---|---|---|
+| 01 | `01-landing-zone` | – | `01-network`, `02-vpc-peering` |
+| 02 | `02-fsxn` | `01-landing-zone` (VPC, subnets, CIDRs) | `03-fsxn-origin`, `04-fsxn-cache` |
+| 03 | `03-ec2` | `01-landing-zone` (subnets); can run in parallel with `02-fsxn` | `05-ec2-client` |
+| 04 | `04-flexcache` | `02-fsxn` (both FSx for ONTAP, mgmt + intercluster IPs, secrets) | `06-ontap-flexcache` |
+
+**Modules** (building blocks, in creation order):
+
+| # | Module | Needs (from lower numbers) | Used by stack |
+|---|---|---|---|
+| 01 | `01-network` | – | `01-landing-zone` |
+| 02 | `02-vpc-peering` | `01-network`: VPC IDs, route tables, CIDRs | `01-landing-zone` |
+| 03 | `03-fsxn-origin` | `01-network`: VPC, private subnets · `02-vpc-peering`: reachability for intercluster + mgmt | `02-fsxn` |
+| 04 | `04-fsxn-cache` | `01-network`, `02-vpc-peering` (same as 03) · created after the Origin it caches | `02-fsxn` |
+| 05 | `05-ec2-client` | `01-network`: subnet · NFS mounts target `03`/`04` (at run time, not in Terraform) | `03-ec2` |
+| 06 | `06-ontap-flexcache` | `03-fsxn-origin` + `04-fsxn-cache`: mgmt/intercluster IPs, origin volume | `04-flexcache` |
+
+```
+01-network ──► 02-vpc-peering ──► 03-fsxn-origin ──► 04-fsxn-cache ──► 06-ontap-flexcache
+     └─────────────────────────────────────────────► 05-ec2-client
 ```
 
 ## Why separate stacks

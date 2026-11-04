@@ -4,7 +4,7 @@
 # so the cache side is ready whenever you decide to deploy a cache FSxN / EC2.
 
 module "origin_network" {
-  source    = "../../modules/network"
+  source    = "../../modules/01-network"
   providers = { aws = aws.origin }
 
   name                 = "${var.project}-origin"
@@ -15,7 +15,7 @@ module "origin_network" {
 }
 
 module "cache_network" {
-  source    = "../../modules/network"
+  source    = "../../modules/01-network"
   providers = { aws = aws.cache }
 
   name                 = "${var.project}-cache"
@@ -26,7 +26,7 @@ module "cache_network" {
 }
 
 module "peering" {
-  source = "../../modules/vpc-peering"
+  source = "../../modules/02-vpc-peering"
   providers = {
     aws.requester = aws.origin
     aws.accepter  = aws.cache
@@ -74,7 +74,7 @@ data "aws_route_tables" "bastion" {
 
 module "bastion_to_origin" {
   count  = local.with_bastion ? 1 : 0
-  source = "../../modules/vpc-peering"
+  source = "../../modules/02-vpc-peering"
   providers = {
     aws.requester = aws.bastion
     aws.accepter  = aws.origin
@@ -93,7 +93,7 @@ module "bastion_to_origin" {
 
 module "bastion_to_cache" {
   count  = local.with_bastion ? 1 : 0
-  source = "../../modules/vpc-peering"
+  source = "../../modules/02-vpc-peering"
   providers = {
     aws.requester = aws.bastion
     aws.accepter  = aws.cache

@@ -1,4 +1,4 @@
-# modules/network
+# modules/01-network
 
 One VPC for one side of the test (called twice by `stacks/01-landing-zone`: origin and cache).
 

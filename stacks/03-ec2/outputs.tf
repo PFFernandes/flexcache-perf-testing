@@ -1,4 +1,4 @@
-# Enabled once modules/ec2-client exposes its outputs (layer 3 implementation).
+# Enabled once modules/05-ec2-client exposes its outputs (layer 3 implementation).
 #
 # output "origin_client" {
 #   value = {

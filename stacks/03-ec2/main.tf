@@ -24,7 +24,7 @@ locals {
 }
 
 module "ec2_origin" {
-  source    = "../../modules/ec2-client"
+  source    = "../../modules/05-ec2-client"
   providers = { aws = aws.origin }
 
   name                  = "${var.project}-origin-client"
@@ -38,7 +38,7 @@ module "ec2_origin" {
 module "ec2_cache" {
   count = var.enable_cache_ec2 ? 1 : 0
 
-  source    = "../../modules/ec2-client"
+  source    = "../../modules/05-ec2-client"
   providers = { aws = aws.cache }
 
   name                  = "${var.project}-cache-client"

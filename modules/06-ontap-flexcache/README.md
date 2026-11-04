@@ -1,4 +1,4 @@
-# modules/ontap-flexcache
+# modules/06-ontap-flexcache
 
 ONTAP-level configuration, done through the **NetApp/netapp-ontap** Terraform provider (ONTAP REST API),
 because the AWS API has no cluster peering or FlexCache operations:
