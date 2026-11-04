@@ -1,0 +1,26 @@
+# --- Terraform ---
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+# Keep .terraform.lock.hcl files committed (they pin provider versions).
+
+# --- Local, environment-specific config (commit the *.example files instead) ---
+*.tfvars
+*.tfvars.json
+
+# --- Benchmark output ---
+results/
+
+# --- OS / editor ---
+.DS_Store
+.vscode/*
+!.vscode/extensions.json

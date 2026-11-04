@@ -1,0 +1,6 @@
+# Optional: copy to terraform.tfvars.
+
+flexcache_name          = "vol_cache"
+flexcache_size_gib      = 500 # smaller than the dataset = test eviction; larger = warm-cache reads
+flexcache_junction_path = "/vol_cache"
+cache_aggregates        = ["aggr1"]

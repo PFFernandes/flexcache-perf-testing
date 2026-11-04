@@ -1,0 +1,17 @@
+# Optional: copy to terraform.tfvars to override defaults. Regions come from common.tfvars.
+
+origin_vpc_cidr             = "10.10.0.0/16"
+origin_private_subnet_cidrs = ["10.10.1.0/24", "10.10.2.0/24"]
+origin_public_subnet_cidrs  = ["10.10.101.0/24"]
+origin_nat_gateway          = true
+
+cache_vpc_cidr             = "10.20.0.0/16"
+cache_private_subnet_cidrs = ["10.20.1.0/24", "10.20.2.0/24"]
+cache_public_subnet_cidrs  = ["10.20.101.0/24"]
+cache_nat_gateway          = true
+
+# Your manually created bastion host's VPC (e.g. the default VPC, 172.31.0.0/16).
+# Its CIDR must not overlap the origin/cache CIDRs above.
+bastion_vpc_id = "vpc-0123456789abcdef0"
+# bastion_region          = "eu-west-1"           # default: origin_region
+# bastion_route_table_ids = ["rtb-0123456789abcdef0"] # default: all route tables in that VPC
