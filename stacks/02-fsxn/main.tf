@@ -27,7 +27,7 @@ module "fsxn_origin" {
   source    = "../../modules/04-fsxn-origin"
   providers = { aws = aws.origin }
 
-  name            = "${var.project}-origin"
+  name            = "${local.name_prefix}-origin"
   vpc_id          = local.lz.origin.vpc_id
   subnet_ids      = local.lz.origin.private_subnet_ids
   route_table_ids = local.lz.origin.private_route_table_ids
@@ -56,7 +56,7 @@ module "fsxn_cache" {
   source    = "../../modules/05-fsxn-cache"
   providers = { aws = aws.cache }
 
-  name            = "${var.project}-cache"
+  name            = "${local.name_prefix}-cache"
   vpc_id          = local.lz.cache.vpc_id
   subnet_ids      = local.lz.cache.private_subnet_ids
   route_table_ids = local.lz.cache.private_route_table_ids

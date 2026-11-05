@@ -1,3 +1,8 @@
+variable "name" {
+  description = "Name tag of the peering connection (both sides), e.g. pedro-flexcache-perf-origin-to-cache."
+  type        = string
+}
+
 variable "requester_vpc_id" {
   type = string
 }

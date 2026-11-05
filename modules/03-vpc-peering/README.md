@@ -17,6 +17,6 @@ Caveat for Multi-AZ: the *management* and NFS/SMB endpoints of a Multi-AZ file s
 floating IPs outside the VPC CIDR, which do **not** route over peering (Transit Gateway needed).
 Single-AZ file systems don't have this limitation.
 
-**Tags:** both sides of the peering get only the `Creator` tag, from the provider default_tags (`creator` in `common.tfvars`).
+**Tags:** both sides of the peering get the `Creator` tag (provider default_tags, `creator` in `common.tfvars`) and a `Name` that starts with `<creator>-<project>` (e.g. `pedro-flexcache-perf-origin-to-cache`).
 
 **Outputs:** `peering_connection_id`, `cross_region`.

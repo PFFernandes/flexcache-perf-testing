@@ -1,3 +1,8 @@
+variable "name" {
+  description = "Name prefix for every resource in the Origin VPC, e.g. pedro-flexcache-perf-origin (Name tag = <prefix>-vpc, <prefix>-private-<az>, ...)."
+  type        = string
+}
+
 variable "cidr_block" {
   description = "VPC CIDR. Must not overlap with the peer VPC."
   type        = string

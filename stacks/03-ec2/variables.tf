@@ -5,8 +5,13 @@ variable "project" {
 }
 
 variable "creator" {
-  description = "Value of the Creator tag, the only tag put on every AWS resource."
+  description = "Creator tag on every AWS resource, and the start of every Name (<creator>-<project>-...)."
   type        = string
+
+  validation {
+    condition     = can(regex("^[a-z0-9][a-z0-9-]*$", var.creator))
+    error_message = "creator is used in resource names: lowercase letters, digits and hyphens only, e.g. \"pedro\"."
+  }
 }
 
 variable "origin_region" {

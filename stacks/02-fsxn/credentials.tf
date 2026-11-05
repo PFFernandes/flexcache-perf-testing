@@ -19,12 +19,14 @@ resource "random_password" "fsxadmin" {
 resource "aws_secretsmanager_secret" "fsxadmin" {
   provider = aws.origin
 
-  name        = "${var.project}/fsxadmin"
-  description = "fsxadmin credentials shared by the FSx for ONTAP Origin and FSx for ONTAP Cache (${var.project})"
+  name        = "${local.name_prefix}/fsxadmin"
+  description = "fsxadmin credentials shared by the FSx for ONTAP Origin and FSx for ONTAP Cache (${local.name_prefix})"
 
   # Lab environment: delete immediately on destroy so the same name can be
   # recreated right away (default would keep it for 30 days).
   recovery_window_in_days = 0
+
+  tags = { Name = "${local.name_prefix}-fsxadmin" }
 }
 
 resource "aws_secretsmanager_secret_version" "fsxadmin" {

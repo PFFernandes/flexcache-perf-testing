@@ -88,11 +88,29 @@ lower numbers, so deploy top-down and destroy bottom-up.
 01 / 02 ───────────────────────────────────► 06-ec2-client
 ```
 
-## Tagging
+## Tagging and names
 
-Every AWS resource gets exactly **one** tag, `Creator`, and nothing else (no `Name`, so the AWS
-console shows resource IDs). Its value is `creator` in `common.tfvars`. It is set once, through each
-provider's `default_tags` in every stack; modules set no tags of their own.
+Every AWS resource gets two tags:
+
+| Tag | Set by | Example |
+|---|---|---|
+| `Creator` | provider `default_tags` in every stack | `pedro` (`creator` in `common.tfvars`) |
+| `Name` | each module | `pedro-flexcache-perf-origin-vpc` |
+
+Every name is `<creator>-<project>-<side>-<object>`, so you can tell at a glance who created it and
+what it is:
+
+| Object | Name |
+|---|---|
+| VPC / subnets | `pedro-flexcache-perf-origin-vpc`, `pedro-flexcache-perf-origin-private-eu-west-1a` |
+| route tables, IGW, NAT | `...-origin-private-rt`, `...-origin-igw`, `...-origin-nat`, `...-origin-nat-eip` |
+| peering | `pedro-flexcache-perf-origin-to-cache` |
+| FSx for ONTAP | `pedro-flexcache-perf-origin-fsxn`, its security group `...-origin-fsxn-sg` |
+| fsxadmin secret | `pedro-flexcache-perf/fsxadmin` |
+| EC2 clients | `pedro-flexcache-perf-origin-client`, `pedro-flexcache-perf-cache-client` |
+
+The prefix is `<creator>-<project>` from `common.tfvars`, so `creator` may only contain lowercase
+letters, digits and hyphens.
 
 Also tagged: the VPC's default security group, main route table and default network ACL, which AWS
 creates untagged (the network modules adopt them), and the EC2 clients' root EBS volumes
@@ -169,8 +187,8 @@ export AWS_PROFILE=<your-profile>
 Each stack writes `stacks/<stack>/terraform.tfstate` in your clone (git-ignored – it contains the
 generated fsxadmin password, so never commit it). Both FSx for ONTAP use the **same** fsxadmin
 password: `02-fsxn` generates it once and stores it in the Secrets Manager secret
-`<project>/fsxadmin` in the origin region. To read it:
-`aws secretsmanager get-secret-value --secret-id <project>/fsxadmin --region <origin_region>`.
+`<creator>-<project>/fsxadmin` in the origin region. To read it:
+`aws secretsmanager get-secret-value --secret-id <creator>-<project>/fsxadmin --region <origin_region>`.
 
 - **Don't delete the clone before you destroy the lab**, and keep a backup of the `*.tfstate` files
   (e.g. Time Machine). Without them Terraform no longer knows what it created and you'd have to

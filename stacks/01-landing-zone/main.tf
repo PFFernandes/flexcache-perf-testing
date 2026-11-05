@@ -28,6 +28,7 @@ module "origin_network" {
   source    = "../../modules/01-network-origin"
   providers = { aws = aws.origin }
 
+  name                 = "${local.name_prefix}-origin"
   azs                  = local.origin_azs
   cidr_block           = var.origin_vpc_cidr
   private_subnet_cidrs = local.origin_private_subnet_cidrs
@@ -40,6 +41,7 @@ module "cache_network" {
   source    = "../../modules/02-network-cache"
   providers = { aws = aws.cache }
 
+  name                 = "${local.name_prefix}-cache"
   azs                  = local.cache_azs
   cidr_block           = var.cache_vpc_cidr
   private_subnet_cidrs = local.cache_private_subnet_cidrs
@@ -53,6 +55,8 @@ module "peering" {
     aws.requester = aws.origin
     aws.accepter  = aws.cache
   }
+
+  name = "${local.name_prefix}-origin-to-cache"
 
   requester_vpc_id          = module.origin_network.vpc_id
   requester_cidr            = module.origin_network.vpc_cidr

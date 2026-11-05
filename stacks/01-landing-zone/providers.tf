@@ -12,6 +12,9 @@ terraform {
 locals {
   # The only tag on every AWS resource (via each provider's default_tags).
   tags = { Creator = var.creator }
+
+  # Every Name starts with this, e.g. pedro-flexcache-perf-origin-vpc.
+  name_prefix = "${var.creator}-${var.project}"
 }
 
 # Two aliases are always configured. If origin_region == cache_region they simply

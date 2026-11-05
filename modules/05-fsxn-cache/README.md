@@ -10,7 +10,7 @@ Status: **security group implemented; file system and SVM to be implemented**
 
 Design notes
 - The fsxadmin password is **the same on both FSx for ONTAP**. `stacks/02-fsxn` generates it once,
-  stores it in one Secrets Manager secret (`<project>/fsxadmin`, origin region) and passes it in as
+  stores it in one Secrets Manager secret (`<creator>-<project>/fsxadmin`, origin region) and passes it in as
   `fsxadmin_password`; `04-flexcache` reads that secret. No passwords live in tfvars or Git.
 - Single-AZ is the default because its management endpoint is reachable across VPC peering
   (Multi-AZ management uses floating IPs that need Transit Gateway). Default is Gen1 `SINGLE_AZ_1`
@@ -20,7 +20,7 @@ Design notes
   TCP 11104-11105 (intercluster / FlexCache); ICMP. All egress allowed.
 
 **Tags:** every resource (security group and each of its rules today; file system and SVM
-once implemented) gets only the `Creator` tag, from the provider default_tags (`creator` in `common.tfvars`).
+once implemented) gets the `Creator` tag (provider default_tags, `creator` in `common.tfvars`) and a `Name` that starts with `<creator>-<project>` (`pedro-flexcache-perf-cache-fsxn-sg`, `...-fsxn` for the file system).
 
 | Input | Default |
 |---|---|

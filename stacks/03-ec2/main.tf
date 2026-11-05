@@ -27,7 +27,7 @@ module "ec2_origin" {
   source    = "../../modules/06-ec2-client"
   providers = { aws = aws.origin }
 
-  name                  = "${var.project}-origin-client"
+  name                  = "${local.name_prefix}-origin-client"
   vpc_id                = local.lz.origin.vpc_id
   subnet_id             = local.lz.origin.private_subnet_ids[0] # same AZ as Single-AZ FSxN
   instance_type         = var.origin_instance_type
@@ -41,7 +41,7 @@ module "ec2_cache" {
   source    = "../../modules/06-ec2-client"
   providers = { aws = aws.cache }
 
-  name                  = "${var.project}-cache-client"
+  name                  = "${local.name_prefix}-cache-client"
   vpc_id                = local.lz.cache.vpc_id
   subnet_id             = local.lz.cache.private_subnet_ids[0]
   instance_type         = var.cache_instance_type

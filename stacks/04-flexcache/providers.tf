@@ -20,6 +20,9 @@ terraform {
 locals {
   # The only tag on every AWS resource (via each provider's default_tags).
   tags = { Creator = var.creator }
+
+  # Every Name starts with this, e.g. pedro-flexcache-perf-origin-vpc.
+  name_prefix = "${var.creator}-${var.project}"
 }
 
 # AWS is only used here to read the shared fsxadmin secret (origin region).

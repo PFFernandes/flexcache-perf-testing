@@ -7,14 +7,15 @@ Its counterpart on the origin side is `modules/01-network-origin`; `modules/03-v
 **Creates:** VPC, private subnets (FSxN + EC2), optional public subnet + IGW + single NAT gateway,
 one private route table, a free S3 gateway endpoint, and adopts the VPC's default security group
 (locked down: no rules), main route table and default network ACL (allow-all, as AWS creates it)
-so that they get the Creator tag too.
+so that they are tagged too.
 
-**Tags:** every resource gets only the `Creator` tag, from the provider default_tags (`creator` in `common.tfvars`).
+**Tags:** every resource gets the `Creator` tag (provider default_tags, `creator` in `common.tfvars`) and a `Name` that starts with `<creator>-<project>` (pedro-flexcache-perf-cache-vpc, -private-eu-west-1a, -nat, ...).
 Routes and route-table associations can't be tagged in AWS.
 
 | Input | Default | Notes |
 |---|---|---|
 | `cidr_block` | – | Must not overlap the origin VPC |
+| `name` | – | Name prefix, e.g. `pedro-flexcache-perf-cache` |
 | `azs` | `[]` (first available) | Full AZ names, e.g. `["eu-west-1a"]`. Stack 01 passes `<region>` + the letters in `common.tfvars` |
 | `private_subnet_cidrs` | – | Exactly one per AZ in `azs`. Single-AZ FSxN uses the first, Multi-AZ the first two |
 | `public_subnet_cidrs` | `[]` | Only needed for NAT |

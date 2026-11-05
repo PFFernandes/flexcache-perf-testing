@@ -14,7 +14,7 @@ Terraform itself runs on your Mac, not on these clients. You reach them with SSM
 origin client is also the SSM tunnel host that lets stack 04 reach both FSx for ONTAP management
 endpoints (`scripts/ontap-tunnel.sh`).
 
-**Tags:** every resource gets only the `Creator` tag, from the provider default_tags (`creator` in `common.tfvars`).
+**Tags:** every resource gets the `Creator` tag (provider default_tags, `creator` in `common.tfvars`) and a `Name` that starts with `<creator>-<project>` (e.g. `pedro-flexcache-perf-origin-client`).
 The instance copies it onto its root EBS volume (`volume_tags`), which default_tags don't reach.
 
 | Input | Default |

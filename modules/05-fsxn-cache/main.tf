@@ -13,8 +13,8 @@
 #                                                   fsx_admin_password = var.fsxadmin_password
 #   aws_fsx_ontap_storage_virtual_machine.this      var.svm_name
 #
-# Tags: none set here. Each resource gets only the Creator tag from the
-# provider default_tags.
+# Tags: each resource gets Name = <var.name>-fsxn-... here, plus the Creator tag
+# from the provider default_tags. The file system will be <var.name>-fsxn.
 #
 # Outputs (see outputs.tf) expose the management + intercluster IPs that
 # stacks/04-flexcache needs for the ONTAP provider and cluster peering.
@@ -52,14 +52,16 @@ locals {
   # One rule per (port rule, allowed CIDR) pair.
   sg_ingress = {
     for pair in setproduct(keys(local.sg_ingress_rules), var.allowed_cidrs) :
-    "${pair[0]}_${pair[1]}" => merge(local.sg_ingress_rules[pair[0]], { cidr = pair[1] })
+    "${pair[0]}_${pair[1]}" => merge(local.sg_ingress_rules[pair[0]], { rule = pair[0], cidr = pair[1] })
   }
 }
 
 resource "aws_security_group" "fsxn" {
-  name        = "${var.name}-fsxn"
+  name        = "${var.name}-fsxn-sg"
   description = "FSx for ONTAP Cache ${var.name}: NFS, ONTAP management and intercluster (FlexCache)"
   vpc_id      = var.vpc_id
+
+  tags = { Name = "${var.name}-fsxn-sg" }
 }
 
 resource "aws_vpc_security_group_ingress_rule" "fsxn" {
@@ -71,6 +73,8 @@ resource "aws_vpc_security_group_ingress_rule" "fsxn" {
   ip_protocol       = each.value.protocol
   from_port         = each.value.from
   to_port           = each.value.to
+
+  tags = { Name = "${var.name}-fsxn-${each.value.rule}-${each.value.cidr}" }
 }
 
 resource "aws_vpc_security_group_egress_rule" "fsxn_all" {
@@ -78,4 +82,6 @@ resource "aws_vpc_security_group_egress_rule" "fsxn_all" {
   description       = "All outbound (NFS callbacks, intercluster, AWS endpoints)"
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "-1"
+
+  tags = { Name = "${var.name}-fsxn-egress-all" }
 }

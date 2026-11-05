@@ -5,9 +5,10 @@
 #   aws_security_group.client            egress all; ingress SSH/ICMP from var.allowed_ingress_cidrs
 #   aws_instance.this                    IMDSv2 required, gp3 root, user_data below
 #
-# Tagging: only the Creator tag, from the provider default_tags. default_tags
-# don't reach the root EBS volume, so aws_instance sets
-# volume_tags = data.aws_default_tags.current.tags to tag it too.
+# Tagging: tags = { Name = var.name } (e.g. pedro-flexcache-perf-origin-client) plus
+# the Creator tag from the provider default_tags. default_tags don't reach the
+# root EBS volume, so aws_instance sets
+# volume_tags = merge(data.aws_default_tags.current.tags, { Name = "${var.name}-root" }).
 #
 # user_data (cloud-init) will:
 #   - dnf install var.packages
