@@ -64,8 +64,9 @@ variable "origin_public_subnet_cidrs" {
 }
 
 variable "origin_nat_gateway" {
-  type    = bool
-  default = true
+  description = "true = public subnet + internet gateway + NAT gateway in the origin VPC. Only the EC2 clients need it (SSM, git); FSx for ONTAP never does."
+  type        = bool
+  default     = false
 }
 
 # --- cache VPC -------------------------------------------------------------
@@ -88,6 +89,7 @@ variable "cache_public_subnet_cidrs" {
 }
 
 variable "cache_nat_gateway" {
-  type    = bool
-  default = true
+  description = "true = public subnet + internet gateway + NAT gateway in the cache VPC. Only the EC2 clients need it (SSM, git); FSx for ONTAP never does."
+  type        = bool
+  default     = false
 }

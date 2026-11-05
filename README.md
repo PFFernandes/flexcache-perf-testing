@@ -152,8 +152,9 @@ Everything runs from your Mac; there is no bastion host.
 - **Reaching private IPs:** the FSxN management endpoints and the EC2 clients have private IPs only.
   `scripts/ontap-tunnel.sh` opens SSM port forwards through the origin EC2 client to both management
   IPs (the cache one over the origin ⇄ cache peering), and you log in to the clients with
-  `aws ssm start-session --target <instance-id>`. The clients reach SSM through the NAT gateway (on by
-  default in `01-landing-zone`).
+  `aws ssm start-session --target <instance-id>`. The clients reach SSM through a NAT gateway, which is **off by
+  default**: set `origin_nat_gateway = true` (and `cache_nat_gateway = true` for a cache client) in
+  `stacks/01-landing-zone/terraform.tfvars` before you deploy EC2. FSx for ONTAP alone needs no NAT.
 
 ## Deploy (on your Mac)
 

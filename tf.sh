@@ -33,8 +33,15 @@ DIR="$ROOT/stacks/$STACK"
 case "$CMD" in
   plan|apply|destroy|import|console|refresh)
     [[ -f "$ROOT/common.tfvars" ]] || { echo "Missing common.tfvars - copy common.tfvars.example and edit it."; exit 1; }
-    echo "Using $ROOT/common.tfvars:"
-    grep -E '^[[:space:]]*(origin_region|cache_region)[[:space:]]*=' "$ROOT/common.tfvars" | sed 's/^/  /'
+    echo "Settings loaded for $STACK:"
+    echo "  $ROOT/common.tfvars"
+    grep -E '^[[:space:]]*(origin_region|cache_region)[[:space:]]*=' "$ROOT/common.tfvars" | sed 's/^/      /'
+    if [[ -f "$DIR/terraform.tfvars" ]]; then
+      echo "  $DIR/terraform.tfvars"
+      grep -E '^[[:space:]]*[a-z_]+[[:space:]]*=' "$DIR/terraform.tfvars" | sed 's/^/      /'
+    elif [[ -f "$DIR/terraform.tfvars.example" ]]; then
+      echo "  (no stacks/$STACK/terraform.tfvars - defaults are used; the .example file is NOT read)"
+    fi
     exec "$TF" -chdir="$DIR" "$CMD" -var-file="$ROOT/common.tfvars" "$@"
     ;;
   *)

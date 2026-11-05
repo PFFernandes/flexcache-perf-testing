@@ -33,7 +33,7 @@ variable "azs" {
 variable "enable_nat_gateway" {
   description = "Create a single NAT gateway so private instances can reach the internet (package installs, SSM). Requires a public subnet."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "enable_s3_gateway_endpoint" {

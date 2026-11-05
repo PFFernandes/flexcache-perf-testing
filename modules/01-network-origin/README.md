@@ -19,7 +19,7 @@ Routes and route-table associations can't be tagged in AWS.
 | `azs` | `[]` (first available) | Full AZ names, e.g. `["eu-west-1a"]`. Stack 01 passes `<region>` + the letters in `common.tfvars` |
 | `private_subnet_cidrs` | – | Exactly one per AZ in `azs`. Single-AZ FSxN uses the first, Multi-AZ the first two |
 | `public_subnet_cidrs` | `[]` | Only needed for NAT |
-| `enable_nat_gateway` | `true` | ~USD 1/day per NAT; turn off if you use SSM VPC endpoints instead |
+| `enable_nat_gateway` | `false` | ~USD 1/day per NAT; turn off if you use SSM VPC endpoints instead |
 | `enable_s3_gateway_endpoint` | `true` | AL2023 `dnf` works through it even without NAT |
 
 **Outputs:** `vpc_id`, `vpc_cidr`, `azs`, `private_subnet_ids`, `public_subnet_ids`,

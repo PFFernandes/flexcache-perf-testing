@@ -7,9 +7,10 @@ origin_vpc_cidr = "10.10.0.0/16"
 # one public /24 (x.x.101.0) in the first AZ. Override only if you need other CIDRs:
 # origin_private_subnet_cidrs = ["10.10.1.0/24"]
 # origin_public_subnet_cidrs  = ["10.10.101.0/24"]
-origin_nat_gateway = true
+# NAT is off by default: FSx for ONTAP doesn't need it. Turn it on only for EC2 clients.
+origin_nat_gateway = false
 
 cache_vpc_cidr = "10.20.0.0/16"
 # cache_private_subnet_cidrs = ["10.20.1.0/24"]
 # cache_public_subnet_cidrs  = ["10.20.101.0/24"]
-cache_nat_gateway = true
+cache_nat_gateway = false
