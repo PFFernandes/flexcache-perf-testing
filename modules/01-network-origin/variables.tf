@@ -1,5 +1,5 @@
 variable "name" {
-  description = "Name prefix for all resources in this VPC, e.g. flexcache-perf-origin."
+  description = "Name prefix for all resources in the Origin VPC, e.g. flexcache-perf-origin."
   type        = string
 }
 
@@ -43,7 +43,7 @@ variable "enable_s3_gateway_endpoint" {
 }
 
 variable "tags" {
-  description = "Extra tags for every resource (provider default_tags already add Project/Owner/Stack)."
+  description = "Extra tags for every resource. Provider default_tags already add Project, Owner, Stack, Side, ManagedBy (+ extra_tags); the module adds Module and Name."
   type        = map(string)
   default     = {}
 }

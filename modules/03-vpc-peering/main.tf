@@ -15,6 +15,10 @@ data "aws_caller_identity" "accepter" {
 
 locals {
   cross_region = data.aws_region.requester.region != data.aws_region.accepter.region
+
+  # Added on top of the provider default_tags. PeeringRole (not Side) so the
+  # provider's Side tag (origin / cache / bastion) is kept.
+  tags = merge(var.tags, { Module = "03-vpc-peering", Name = var.name })
 }
 
 resource "aws_vpc_peering_connection" "this" {
@@ -26,7 +30,7 @@ resource "aws_vpc_peering_connection" "this" {
   peer_region   = local.cross_region ? data.aws_region.accepter.region : null
   auto_accept   = false # accepted explicitly below (required for cross-region)
 
-  tags = merge(var.tags, { Name = var.name, Side = "requester" })
+  tags = merge(local.tags, { PeeringRole = "requester" })
 }
 
 resource "aws_vpc_peering_connection_accepter" "this" {
@@ -35,7 +39,7 @@ resource "aws_vpc_peering_connection_accepter" "this" {
   vpc_peering_connection_id = aws_vpc_peering_connection.this.id
   auto_accept               = true
 
-  tags = merge(var.tags, { Name = var.name, Side = "accepter" })
+  tags = merge(local.tags, { PeeringRole = "accepter" })
 }
 
 # Routes reference the accepter resource so they are only created once the

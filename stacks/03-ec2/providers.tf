@@ -10,12 +10,13 @@ terraform {
 }
 
 locals {
-  common_tags = {
+  # Standard tags on every AWS resource (via default_tags); each provider adds Side.
+  common_tags = merge(var.extra_tags, {
     Project   = var.project
     Owner     = var.owner
     Stack     = "03-ec2"
     ManagedBy = "terraform"
-  }
+  })
 }
 
 provider "aws" {

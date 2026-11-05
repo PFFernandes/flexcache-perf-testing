@@ -18,12 +18,13 @@ terraform {
 }
 
 locals {
-  common_tags = {
+  # Standard tags on every AWS resource (via default_tags); each provider adds Side.
+  common_tags = merge(var.extra_tags, {
     Project   = var.project
     Owner     = var.owner
     Stack     = "04-flexcache"
     ManagedBy = "terraform"
-  }
+  })
 }
 
 # AWS is only used here to read the fsxadmin secrets.
@@ -32,7 +33,7 @@ provider "aws" {
   region = var.origin_region
 
   default_tags {
-    tags = local.common_tags
+    tags = merge(local.common_tags, { Side = "origin" })
   }
 }
 
@@ -41,7 +42,7 @@ provider "aws" {
   region = var.cache_region
 
   default_tags {
-    tags = local.common_tags
+    tags = merge(local.common_tags, { Side = "cache" })
   }
 }
 

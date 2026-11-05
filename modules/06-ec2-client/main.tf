@@ -5,6 +5,10 @@
 #   aws_security_group.client            egress all; ingress SSH/ICMP from var.allowed_ingress_cidrs
 #   aws_instance.this                    IMDSv2 required, gp3 root, user_data below
 #
+# Tagging: every resource gets tags = merge(local.tags, { Name = ... }), where
+# local.tags = merge(var.tags, { Module = "06-ec2-client" }). aws_instance also
+# sets volume_tags so the root EBS volume is tagged too.
+#
 # user_data (cloud-init) will:
 #   - dnf install var.packages
 #   - tune NFS client (sunrpc slot table) and create /mnt/fsxn

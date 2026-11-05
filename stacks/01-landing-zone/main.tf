@@ -1,10 +1,12 @@
-# Layer 1 - landing zone: origin VPC + cache VPC + VPC peering between them,
+# Layer 1 - landing zone: Network Origin (origin VPC) + Network Cache (cache VPC)
+# + VPC peering between them,
 # plus (optional) peering from your bastion's VPC to both.
 # Both VPCs are always created (they cost nothing except the optional NAT gateways),
 # so the cache side is ready whenever you decide to deploy a cache FSxN / EC2.
 
+# --- Network Origin ----------------------------------------------------------
 module "origin_network" {
-  source    = "../../modules/01-network"
+  source    = "../../modules/01-network-origin"
   providers = { aws = aws.origin }
 
   name                 = "${var.project}-origin"
@@ -14,8 +16,9 @@ module "origin_network" {
   enable_nat_gateway   = var.origin_nat_gateway
 }
 
+# --- Network Cache -----------------------------------------------------------
 module "cache_network" {
-  source    = "../../modules/01-network"
+  source    = "../../modules/02-network-cache"
   providers = { aws = aws.cache }
 
   name                 = "${var.project}-cache"
@@ -26,7 +29,7 @@ module "cache_network" {
 }
 
 module "peering" {
-  source = "../../modules/02-vpc-peering"
+  source = "../../modules/03-vpc-peering"
   providers = {
     aws.requester = aws.origin
     aws.accepter  = aws.cache
@@ -74,7 +77,7 @@ data "aws_route_tables" "bastion" {
 
 module "bastion_to_origin" {
   count  = local.with_bastion ? 1 : 0
-  source = "../../modules/02-vpc-peering"
+  source = "../../modules/03-vpc-peering"
   providers = {
     aws.requester = aws.bastion
     aws.accepter  = aws.origin
@@ -93,7 +96,7 @@ module "bastion_to_origin" {
 
 module "bastion_to_cache" {
   count  = local.with_bastion ? 1 : 0
-  source = "../../modules/02-vpc-peering"
+  source = "../../modules/03-vpc-peering"
   providers = {
     aws.requester = aws.bastion
     aws.accepter  = aws.cache

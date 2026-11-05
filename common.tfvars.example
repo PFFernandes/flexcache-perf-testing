@@ -7,3 +7,10 @@ owner   = "pedro"
 # (cross-region test, e.g. measure FlexCache over real WAN latency).
 origin_region = "eu-west-1"
 cache_region  = "eu-central-1"
+
+# Optional: extra tags on every AWS resource in every stack, on top of the standard
+# Project / Owner / Stack / Side / ManagedBy (+ Module and Name set by each module).
+extra_tags = {
+  # CostCenter = "1234"
+  # Environment = "lab"
+}

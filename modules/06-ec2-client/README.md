@@ -1,4 +1,4 @@
-# modules/05-ec2-client
+# modules/06-ec2-client
 
 Linux test client (Amazon Linux 2023). Called by `stacks/03-ec2` once for the origin and,
 when `enable_cache_ec2 = true`, once for the cache.
@@ -11,6 +11,9 @@ Roles
 
 Terraform itself runs on your bastion, not on these clients. Access from the bastion is SSH over the
 bastion peering (set `key_name`), or SSM Session Manager.
+
+**Tags:** every resource gets the provider default tags plus `Module = "06-ec2-client"` and a
+`Name`; the instance also tags its root EBS volume (`volume_tags`).
 
 | Input | Default |
 |---|---|

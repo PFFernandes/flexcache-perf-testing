@@ -10,12 +10,13 @@ terraform {
 }
 
 locals {
-  common_tags = {
+  # Standard tags on every AWS resource (via default_tags); each provider adds Side.
+  common_tags = merge(var.extra_tags, {
     Project   = var.project
     Owner     = var.owner
     Stack     = "01-landing-zone"
     ManagedBy = "terraform"
-  }
+  })
 }
 
 # Two aliases are always configured. If origin_region == cache_region they simply

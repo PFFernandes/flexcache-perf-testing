@@ -16,6 +16,12 @@ variable "cache_region" {
   type = string
 }
 
+variable "extra_tags" {
+  description = "Additional tags added to every AWS resource in every stack (e.g. CostCenter). Cannot override the standard tags."
+  type        = map(string)
+  default     = {}
+}
+
 # --- bastion (the host you run this automation from) ------------------------
 
 variable "bastion_vpc_id" {

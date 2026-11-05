@@ -1,5 +1,5 @@
 # Contract consumed by 04-flexcache (and the test scripts) via terraform_remote_state.
-# Enabled once modules/03-fsxn-origin and modules/04-fsxn-cache expose their outputs (layer 2 implementation).
+# Enabled once modules/04-fsxn-origin and modules/05-fsxn-cache expose their outputs (layer 2 implementation).
 #
 # output "origin" {
 #   value = {

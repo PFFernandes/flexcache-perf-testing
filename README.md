@@ -27,21 +27,22 @@ create manually.
 ```
 .
 ├── modules/                    reusable building blocks (no backend, no provider config)
-│   ├── 01-network/             one VPC: subnets, route table, NAT (opt), S3 endpoint     ✅ implemented
-│   ├── 02-vpc-peering/         peering + routes, same- or cross-region                   ✅ implemented
-│   ├── 03-fsxn-origin/         FSx for ONTAP Origin: FS + SVM + origin vol + SG + secret 🔲 SG only
-│   ├── 04-fsxn-cache/          FSx for ONTAP Cache: FS + SVM + SG + secret (no volumes)  🔲 SG only
-│   ├── 05-ec2-client/          AL2023 test client, SSM access, fio/nfs-utils             🔲 interface only
-│   └── 06-ontap-flexcache/     cluster peer + SVM peer + FlexCache (ONTAP provider)      🔲 interface only
+│   ├── 01-network-origin/      Network Origin: origin VPC, subnets, NAT (opt), S3        ✅ implemented
+│   ├── 02-network-cache/       Network Cache: cache VPC, subnets, NAT (opt), S3          ✅ implemented
+│   ├── 03-vpc-peering/         peering + routes, same- or cross-region                   ✅ implemented
+│   ├── 04-fsxn-origin/         FSx for ONTAP Origin: FS + SVM + origin vol + SG + secret 🔲 SG only
+│   ├── 05-fsxn-cache/          FSx for ONTAP Cache: FS + SVM + SG + secret (no volumes)  🔲 SG only
+│   ├── 06-ec2-client/          AL2023 test client, SSM access, fio/nfs-utils             🔲 interface only
+│   └── 07-ontap-flexcache/     cluster peer + SVM peer + FlexCache (ONTAP provider)      🔲 interface only
 ├── stacks/                     what you actually deploy – one local state file per stack
-│   ├── 01-landing-zone/        origin VPC + cache VPC + peering [+ bastion peering]     ✅
+│   ├── 01-landing-zone/        Network Origin + Network Cache + peering [+ bastion]      ✅
 │   ├── 02-fsxn/                FSx for ONTAP Origin [+ Cache if enable_cache_fsxn]       wired
 │   ├── 03-ec2/                 origin client [+ cache client if enable_cache_ec2]        wired
 │   └── 04-flexcache/           ONTAP: peering + FlexCache volume                         wired
 ├── scripts/
 │   ├── origin/                 dataset generation
 │   └── cache/                  read benchmark
-├── common.tfvars.example       project, owner, regions
+├── common.tfvars.example       project, owner, regions, extra_tags
 └── tf.sh                       wrapper: ./tf.sh <stack> <command>
 ```
 
@@ -63,26 +64,51 @@ lower numbers, so deploy top-down and destroy bottom-up.
 
 | # | Stack | Depends on | Calls modules |
 |---|---|---|---|
-| 01 | `01-landing-zone` | – | `01-network`, `02-vpc-peering` |
-| 02 | `02-fsxn` | `01-landing-zone` (VPC, subnets, CIDRs) | `03-fsxn-origin`, `04-fsxn-cache` |
-| 03 | `03-ec2` | `01-landing-zone` (subnets); can run in parallel with `02-fsxn` | `05-ec2-client` |
-| 04 | `04-flexcache` | `02-fsxn` (both FSx for ONTAP, mgmt + intercluster IPs, secrets) | `06-ontap-flexcache` |
+| 01 | `01-landing-zone` | – | `01-network-origin`, `02-network-cache`, `03-vpc-peering` |
+| 02 | `02-fsxn` | `01-landing-zone` (VPC, subnets, CIDRs) | `04-fsxn-origin`, `05-fsxn-cache` |
+| 03 | `03-ec2` | `01-landing-zone` (subnets); can run in parallel with `02-fsxn` | `06-ec2-client` |
+| 04 | `04-flexcache` | `02-fsxn` (both FSx for ONTAP, mgmt + intercluster IPs, secrets) | `07-ontap-flexcache` |
 
 **Modules** (building blocks, in creation order):
 
-| # | Module | Needs (from lower numbers) | Used by stack |
-|---|---|---|---|
-| 01 | `01-network` | – | `01-landing-zone` |
-| 02 | `02-vpc-peering` | `01-network`: VPC IDs, route tables, CIDRs | `01-landing-zone` |
-| 03 | `03-fsxn-origin` | `01-network`: VPC, private subnets · `02-vpc-peering`: reachability for intercluster + mgmt | `02-fsxn` |
-| 04 | `04-fsxn-cache` | `01-network`, `02-vpc-peering` (same as 03) · created after the Origin it caches | `02-fsxn` |
-| 05 | `05-ec2-client` | `01-network`: subnet · NFS mounts target `03`/`04` (at run time, not in Terraform) | `03-ec2` |
-| 06 | `06-ontap-flexcache` | `03-fsxn-origin` + `04-fsxn-cache`: mgmt/intercluster IPs, origin volume | `04-flexcache` |
+| # | Module | Side | Needs (from lower numbers) | Used by stack |
+|---|---|---|---|---|
+| 01 | `01-network-origin` | Origin | – | `01-landing-zone` |
+| 02 | `02-network-cache` | Cache | – (independent of 01, but must not overlap its CIDR) | `01-landing-zone` |
+| 03 | `03-vpc-peering` | both | `01` + `02`: VPC IDs, route tables, CIDRs | `01-landing-zone` |
+| 04 | `04-fsxn-origin` | Origin | `01`: VPC, private subnets · `03`: reachability for intercluster + mgmt | `02-fsxn` |
+| 05 | `05-fsxn-cache` | Cache | `02`: VPC, private subnets · `03` · created after the Origin it caches (`04`) | `02-fsxn` |
+| 06 | `06-ec2-client` | both | `01` (origin client) / `02` (cache client): subnet · NFS mounts target `04`/`05` at run time | `03-ec2` |
+| 07 | `07-ontap-flexcache` | both | `04` + `05`: mgmt/intercluster IPs, origin volume | `04-flexcache` |
 
 ```
-01-network ──► 02-vpc-peering ──► 03-fsxn-origin ──► 04-fsxn-cache ──► 06-ontap-flexcache
-     └─────────────────────────────────────────────► 05-ec2-client
+01-network-origin ──┐                  ┌──► 04-fsxn-origin ──┐
+                    ├──► 03-vpc-peering┤                     ├──► 07-ontap-flexcache
+02-network-cache  ──┘                  └──► 05-fsxn-cache  ──┘
+01 / 02 ───────────────────────────────────► 06-ec2-client
 ```
+
+## Tagging
+
+Every AWS resource is tagged. Tags come from two places:
+
+| Tag | Set by | Value |
+|---|---|---|
+| `Project`, `Owner` | provider `default_tags` in every stack | from `common.tfvars` |
+| `Stack` | provider `default_tags` | `01-landing-zone` … `04-flexcache` |
+| `Side` | provider `default_tags` (one provider alias per side) | `origin`, `cache` or `bastion` |
+| `ManagedBy` | provider `default_tags` | `terraform` |
+| any `extra_tags` | provider `default_tags` | from `common.tfvars`, e.g. `CostCenter` |
+| `Module` | each module | e.g. `01-network-origin`, `05-fsxn-cache` |
+| `Name` | each module | e.g. `flexcache-perf-origin-private-eu-west-1a` |
+
+Also tagged: the VPC's default security group, main route table and default network ACL, which AWS
+creates untagged (the network modules adopt them). The peering module uses `PeeringRole =
+requester | accepter` so it doesn't overwrite `Side`.
+
+Not taggable: routes and route-table associations (AWS has no tags for them), and ONTAP objects
+in `07-ontap-flexcache` (cluster peer, SVM peer, FlexCache). The FlexCache volume gets an ONTAP
+comment with the same information instead.
 
 ## Why separate stacks
 
