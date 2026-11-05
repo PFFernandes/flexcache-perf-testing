@@ -12,8 +12,8 @@ Roles
 Terraform itself runs on your bastion, not on these clients. Access from the bastion is SSH over the
 bastion peering (set `key_name`), or SSM Session Manager.
 
-**Tags:** every resource gets the provider default tags plus `Module = "06-ec2-client"` and a
-`Name`; the instance also tags its root EBS volume (`volume_tags`).
+**Tags:** every resource gets only the `Creator` tag, from the provider default_tags (`creator` in `common.tfvars`).
+The instance copies it onto its root EBS volume (`volume_tags`), which default_tags don't reach.
 
 | Input | Default |
 |---|---|

@@ -4,8 +4,9 @@ variable "project" {
   type = string
 }
 
-variable "owner" {
-  type = string
+variable "creator" {
+  description = "Value of the Creator tag, the only tag put on every AWS resource."
+  type        = string
 }
 
 variable "origin_region" {
@@ -14,12 +15,6 @@ variable "origin_region" {
 
 variable "cache_region" {
   type = string
-}
-
-variable "extra_tags" {
-  description = "Additional tags added to every AWS resource in every stack (e.g. CostCenter). Cannot override the standard tags."
-  type        = map(string)
-  default     = {}
 }
 
 # --- bastion (the host you run this automation from) ------------------------

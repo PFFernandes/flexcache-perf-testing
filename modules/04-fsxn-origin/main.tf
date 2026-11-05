@@ -13,7 +13,8 @@
 #   aws_fsx_ontap_storage_virtual_machine.this      var.svm_name
 #   aws_fsx_ontap_volume.this (for_each var.volumes) the origin FlexVol(s)
 #
-# Every resource above gets tags = merge(local.tags, { Name = ... }).
+# Tags: none set here. Each resource gets only the Creator tag from the
+# provider default_tags.
 #
 # Outputs (see outputs.tf) expose the management + intercluster IPs that
 # stacks/04-flexcache needs for the ONTAP provider and cluster peering.
@@ -24,9 +25,6 @@
 # Port list follows the AWS "File system access control with Amazon VPC" guide for FSx for ONTAP.
 
 locals {
-  # Added on top of the provider default_tags (Project, Owner, Stack, Side,
-  # ManagedBy + extra_tags). Every resource in this module uses it.
-  tags = merge(var.tags, { Module = "04-fsxn-origin" })
 
   sg_ingress_rules = {
     # NFS
@@ -62,8 +60,6 @@ resource "aws_security_group" "fsxn" {
   name        = "${var.name}-fsxn"
   description = "FSx for ONTAP Origin ${var.name}: NFS, ONTAP management and intercluster (FlexCache)"
   vpc_id      = var.vpc_id
-
-  tags = merge(local.tags, { Name = "${var.name}-fsxn" })
 }
 
 resource "aws_vpc_security_group_ingress_rule" "fsxn" {
@@ -75,8 +71,6 @@ resource "aws_vpc_security_group_ingress_rule" "fsxn" {
   ip_protocol       = each.value.protocol
   from_port         = each.value.from
   to_port           = each.value.to
-
-  tags = merge(local.tags, { Name = "${var.name}-fsxn-${each.key}" })
 }
 
 resource "aws_vpc_security_group_egress_rule" "fsxn_all" {
@@ -84,6 +78,4 @@ resource "aws_vpc_security_group_egress_rule" "fsxn_all" {
   description       = "All outbound (NFS callbacks, intercluster, AWS endpoints)"
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "-1"
-
-  tags = merge(local.tags, { Name = "${var.name}-fsxn-egress-all" })
 }

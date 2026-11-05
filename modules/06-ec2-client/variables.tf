@@ -52,8 +52,3 @@ variable "additional_policy_arns" {
   type        = list(string)
   default     = []
 }
-
-variable "tags" {
-  type    = map(string)
-  default = {}
-}

@@ -11,7 +11,7 @@
 #
 # Tagging: these are ONTAP objects, not AWS resources, so AWS tags don't apply.
 # The FlexCache volume gets an ONTAP comment instead, e.g.
-#   "Project=<project> Module=07-ontap-flexcache ManagedBy=terraform".
+#   "Creator=<creator>".
 #
 # Traffic for all of the above uses the intercluster endpoints (TCP 11104/11105),
 # which route over the VPC peering created in stacks/01-landing-zone.

@@ -42,7 +42,7 @@ create manually.
 ├── scripts/
 │   ├── origin/                 dataset generation
 │   └── cache/                  read benchmark
-├── common.tfvars.example       project, owner, regions, extra_tags
+├── common.tfvars.example       project, creator, regions
 └── tf.sh                       wrapper: ./tf.sh <stack> <command>
 ```
 
@@ -90,25 +90,17 @@ lower numbers, so deploy top-down and destroy bottom-up.
 
 ## Tagging
 
-Every AWS resource is tagged. Tags come from two places:
-
-| Tag | Set by | Value |
-|---|---|---|
-| `Project`, `Owner` | provider `default_tags` in every stack | from `common.tfvars` |
-| `Stack` | provider `default_tags` | `01-landing-zone` … `04-flexcache` |
-| `Side` | provider `default_tags` (one provider alias per side) | `origin`, `cache` or `bastion` |
-| `ManagedBy` | provider `default_tags` | `terraform` |
-| any `extra_tags` | provider `default_tags` | from `common.tfvars`, e.g. `CostCenter` |
-| `Module` | each module | e.g. `01-network-origin`, `05-fsxn-cache` |
-| `Name` | each module | e.g. `flexcache-perf-origin-private-eu-west-1a` |
+Every AWS resource gets exactly **one** tag, `Creator`, and nothing else (no `Name`, so the AWS
+console shows resource IDs). Its value is `creator` in `common.tfvars`. It is set once, through each
+provider's `default_tags` in every stack; modules set no tags of their own.
 
 Also tagged: the VPC's default security group, main route table and default network ACL, which AWS
-creates untagged (the network modules adopt them). The peering module uses `PeeringRole =
-requester | accepter` so it doesn't overwrite `Side`.
+creates untagged (the network modules adopt them), and the EC2 clients' root EBS volumes
+(`volume_tags`, which `default_tags` don't reach).
 
 Not taggable: routes and route-table associations (AWS has no tags for them), and ONTAP objects
 in `07-ontap-flexcache` (cluster peer, SVM peer, FlexCache). The FlexCache volume gets an ONTAP
-comment with the same information instead.
+comment with the Creator instead.
 
 ## Why separate stacks
 
@@ -149,7 +141,7 @@ destroys the machine that holds the state).
 
 ```bash
 git clone <this repo> && cd flexcache-perf-testing
-cp common.tfvars.example common.tfvars                                   # regions, project, owner
+cp common.tfvars.example common.tfvars                                   # regions, project, creator
 cp stacks/01-landing-zone/terraform.tfvars.example stacks/01-landing-zone/terraform.tfvars   # set bastion_vpc_id
 
 # 1. landing zone

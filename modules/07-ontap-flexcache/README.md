@@ -14,7 +14,7 @@ must run from somewhere that can reach them: your bastion, whose VPC `01-landing
 both the origin and the cache VPC (`bastion_vpc_id`).
 
 **Tags:** these are ONTAP objects, not AWS resources, so AWS tags don't apply. The FlexCache
-volume will carry an ONTAP comment with the same Project / Module / ManagedBy information.
+volume will carry an ONTAP comment with the Creator instead.
 
 | Input | Default |
 |---|---|

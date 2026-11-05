@@ -1,8 +1,3 @@
-variable "name" {
-  description = "Name prefix for all resources in the Cache VPC, e.g. flexcache-perf-cache."
-  type        = string
-}
-
 variable "cidr_block" {
   description = "VPC CIDR. Must not overlap with the peer VPC."
   type        = string
@@ -40,10 +35,4 @@ variable "enable_s3_gateway_endpoint" {
   description = "Free S3 gateway endpoint: Amazon Linux 2023 package repos are reachable through it even without NAT."
   type        = bool
   default     = true
-}
-
-variable "tags" {
-  description = "Extra tags for every resource. Provider default_tags already add Project, Owner, Stack, Side, ManagedBy (+ extra_tags); the module adds Module and Name."
-  type        = map(string)
-  default     = {}
 }

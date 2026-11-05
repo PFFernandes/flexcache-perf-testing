@@ -9,7 +9,6 @@ module "origin_network" {
   source    = "../../modules/01-network-origin"
   providers = { aws = aws.origin }
 
-  name                 = "${var.project}-origin"
   cidr_block           = var.origin_vpc_cidr
   private_subnet_cidrs = var.origin_private_subnet_cidrs
   public_subnet_cidrs  = var.origin_public_subnet_cidrs
@@ -21,7 +20,6 @@ module "cache_network" {
   source    = "../../modules/02-network-cache"
   providers = { aws = aws.cache }
 
-  name                 = "${var.project}-cache"
   cidr_block           = var.cache_vpc_cidr
   private_subnet_cidrs = var.cache_private_subnet_cidrs
   public_subnet_cidrs  = var.cache_public_subnet_cidrs
@@ -34,8 +32,6 @@ module "peering" {
     aws.requester = aws.origin
     aws.accepter  = aws.cache
   }
-
-  name = "${var.project}-origin-to-cache"
 
   requester_vpc_id          = module.origin_network.vpc_id
   requester_cidr            = module.origin_network.vpc_cidr
@@ -83,8 +79,6 @@ module "bastion_to_origin" {
     aws.accepter  = aws.origin
   }
 
-  name = "${var.project}-bastion-to-origin"
-
   requester_vpc_id          = var.bastion_vpc_id
   requester_cidr            = local.bastion_cidr
   requester_route_table_ids = local.bastion_route_table_ids
@@ -101,8 +95,6 @@ module "bastion_to_cache" {
     aws.requester = aws.bastion
     aws.accepter  = aws.cache
   }
-
-  name = "${var.project}-bastion-to-cache"
 
   requester_vpc_id          = var.bastion_vpc_id
   requester_cidr            = local.bastion_cidr

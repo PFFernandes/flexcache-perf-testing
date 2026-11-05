@@ -5,9 +5,9 @@
 #   aws_security_group.client            egress all; ingress SSH/ICMP from var.allowed_ingress_cidrs
 #   aws_instance.this                    IMDSv2 required, gp3 root, user_data below
 #
-# Tagging: every resource gets tags = merge(local.tags, { Name = ... }), where
-# local.tags = merge(var.tags, { Module = "06-ec2-client" }). aws_instance also
-# sets volume_tags so the root EBS volume is tagged too.
+# Tagging: only the Creator tag, from the provider default_tags. default_tags
+# don't reach the root EBS volume, so aws_instance sets
+# volume_tags = data.aws_default_tags.current.tags to tag it too.
 #
 # user_data (cloud-init) will:
 #   - dnf install var.packages

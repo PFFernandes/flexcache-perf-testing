@@ -7,21 +7,18 @@ Its counterpart on the origin side is `modules/01-network-origin`; `modules/03-v
 **Creates:** VPC, private subnets (FSxN + EC2), optional public subnet + IGW + single NAT gateway,
 one private route table, a free S3 gateway endpoint, and adopts the VPC's default security group
 (locked down: no rules), main route table and default network ACL (allow-all, as AWS creates it)
-so that they are tagged too.
+so that they get the Creator tag too.
 
-**Tags:** every resource gets the provider default tags (Project, Owner, Stack, Side, ManagedBy +
-`extra_tags`) plus `Module = "02-network-cache"` and a `Name`. Routes and route-table associations can't be
-tagged in AWS.
+**Tags:** every resource gets only the `Creator` tag, from the provider default_tags (`creator` in `common.tfvars`).
+Routes and route-table associations can't be tagged in AWS.
 
 | Input | Default | Notes |
 |---|---|---|
-| `name` | – | Name prefix, e.g. `flexcache-perf-cache` |
 | `cidr_block` | – | Must not overlap the origin VPC |
 | `private_subnet_cidrs` | – | One per AZ. Single-AZ FSxN uses the first, Multi-AZ the first two |
 | `public_subnet_cidrs` | `[]` | Only needed for NAT |
 | `enable_nat_gateway` | `true` | ~USD 1/day per NAT; turn off if you use SSM VPC endpoints instead |
 | `enable_s3_gateway_endpoint` | `true` | AL2023 `dnf` works through it even without NAT |
-| `tags` | `{}` | Extra tags for this module only |
 
 **Outputs:** `vpc_id`, `vpc_cidr`, `azs`, `private_subnet_ids`, `public_subnet_ids`,
 `private_route_table_ids`, `public_route_table_ids`, `nat_public_ip`.

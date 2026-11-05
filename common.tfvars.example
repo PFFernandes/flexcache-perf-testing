@@ -1,16 +1,9 @@
 # Copy to common.tfvars (git-ignored). tf.sh passes it to every stack.
 
 project = "flexcache-perf"
-owner   = "pedro"
+creator = "pedro" # the only tag on every AWS resource: Creator = <this>
 
 # Origin and cache can be the same region (in-region test) or different regions
 # (cross-region test, e.g. measure FlexCache over real WAN latency).
 origin_region = "eu-west-1"
 cache_region  = "eu-central-1"
-
-# Optional: extra tags on every AWS resource in every stack, on top of the standard
-# Project / Owner / Stack / Side / ManagedBy (+ Module and Name set by each module).
-extra_tags = {
-  # CostCenter = "1234"
-  # Environment = "lab"
-}

@@ -25,8 +25,6 @@ resource "aws_secretsmanager_secret" "fsxadmin" {
   # Lab environment: delete immediately on destroy so the same name can be
   # recreated right away (default would keep it for 30 days).
   recovery_window_in_days = 0
-
-  tags = { Module = "02-fsxn", Name = "${var.project}-fsxadmin" }
 }
 
 resource "aws_secretsmanager_secret_version" "fsxadmin" {

@@ -17,7 +17,6 @@ Caveat for Multi-AZ: the *management* and NFS/SMB endpoints of a Multi-AZ file s
 floating IPs outside the VPC CIDR, which do **not** route over peering (Transit Gateway needed).
 Single-AZ file systems don't have this limitation.
 
-**Tags:** provider default tags (the requester side gets its provider's `Side`, the accepter side its
-own) plus `Module = "03-vpc-peering"`, `Name` and `PeeringRole = requester | accepter`.
+**Tags:** both sides of the peering get only the `Creator` tag, from the provider default_tags (`creator` in `common.tfvars`).
 
 **Outputs:** `peering_connection_id`, `cross_region`.

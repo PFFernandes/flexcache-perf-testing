@@ -84,9 +84,3 @@ variable "svm_name" {
   type        = string
   default     = "svm_cache"
 }
-
-
-variable "tags" {
-  type    = map(string)
-  default = {}
-}

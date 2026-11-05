@@ -20,7 +20,7 @@ Design notes
   TCP 11104-11105 (intercluster / FlexCache); ICMP. All egress allowed.
 
 **Tags:** every resource (security group and each of its rules today; file system and SVM
-once implemented) gets the provider default tags plus `Module = "05-fsxn-cache"` and a `Name`.
+once implemented) gets only the `Creator` tag, from the provider default_tags (`creator` in `common.tfvars`).
 
 | Input | Default |
 |---|---|
