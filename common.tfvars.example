@@ -6,4 +6,4 @@ creator = "pedro" # the only tag on every AWS resource: Creator = <this>
 # Origin and cache can be the same region (in-region test) or different regions
 # (cross-region test, e.g. measure FlexCache over real WAN latency).
 origin_region = "eu-west-1"
-cache_region  = "eu-central-1"
+cache_region  = "eu-west-1"
