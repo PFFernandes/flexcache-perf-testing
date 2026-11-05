@@ -9,7 +9,7 @@
 #   aws_security_group.fsxn + rules                NFS, ONTAP management, intercluster
 #   aws_fsx_ontap_file_system.this                 first subnet (Single-AZ) or first two (Multi-AZ)
 #   aws_fsx_ontap_storage_virtual_machine.this     var.svm_name
-#   aws_fsx_ontap_volume.this (for_each volumes)  the origin FlexVol(s)
+#   aws_fsx_ontap_volume.this (for_each volumes)  the origin volume(s), FlexGroup by default
 #
 # Tags: each resource gets Name = <var.name>-fsxn-... here, plus the Creator tag
 # from the provider default_tags. The file system will be <var.name>-fsxn.
@@ -130,6 +130,7 @@ resource "aws_fsx_ontap_volume" "this" {
 
   name                       = each.key
   storage_virtual_machine_id = aws_fsx_ontap_storage_virtual_machine.this.id
+  volume_style               = each.value.volume_style
   junction_path              = each.value.junction_path
   size_in_megabytes          = each.value.size_gib * 1024
   security_style             = each.value.security_style
@@ -139,6 +140,15 @@ resource "aws_fsx_ontap_volume" "this" {
 
   tiering_policy {
     name = each.value.tiering_policy
+  }
+
+  # FlexGroup layout; only set when overridden (AWS default: 8 constituents on aggr1).
+  dynamic "aggregate_configuration" {
+    for_each = each.value.volume_style == "FLEXGROUP" && (each.value.aggregates != null || each.value.constituents_per_aggregate != null) ? [1] : []
+    content {
+      aggregates                 = each.value.aggregates
+      constituents_per_aggregate = each.value.constituents_per_aggregate
+    }
   }
 
   # Lab data: no final backup on destroy.

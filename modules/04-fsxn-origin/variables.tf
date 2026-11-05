@@ -97,14 +97,31 @@ variable "svm_name" {
 }
 
 variable "volumes" {
-  description = "Origin FlexVol volumes (hold the test data set; the FlexCache on the FSx for ONTAP Cache points at them)."
+  description = "Origin volumes (hold the test data set; the FlexCache on the FSx for ONTAP Cache points at them). FlexGroup by default."
   type = map(object({
     size_gib                   = number
     junction_path              = string
+    volume_style               = optional(string, "FLEXGROUP") # FLEXGROUP | FLEXVOL
+    constituents_per_aggregate = optional(number, null)        # FlexGroup only; null = AWS default (8 per aggregate)
+    aggregates                 = optional(list(string), null)  # FlexGroup only; null = AWS default (aggr1)
     security_style             = optional(string, "UNIX")
     tiering_policy             = optional(string, "NONE") # keep test data on SSD
-    storage_efficiency_enabled = optional(bool, false)    # off = cleaner perf numbers
+    storage_efficiency_enabled = optional(bool, true)     # dedupe + compression + compaction
     snapshot_policy            = optional(string, "none")
   }))
   default = {}
+
+  validation {
+    condition     = alltrue([for v in values(var.volumes) : contains(["FLEXGROUP", "FLEXVOL"], v.volume_style)])
+    error_message = "volume_style must be FLEXGROUP or FLEXVOL."
+  }
+
+  # FSx for ONTAP needs at least 100 GiB per FlexGroup constituent.
+  validation {
+    condition = alltrue([for v in values(var.volumes) :
+      v.volume_style != "FLEXGROUP" ||
+      v.size_gib >= 100 * coalesce(v.constituents_per_aggregate, 8) * max(1, length(coalesce(v.aggregates, ["aggr1"])))
+    ])
+    error_message = "A FlexGroup needs at least 100 GiB per constituent (default 8 per aggregate = 800 GiB). Increase size_gib or lower constituents_per_aggregate."
+  }
 }

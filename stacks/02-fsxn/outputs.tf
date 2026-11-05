@@ -21,6 +21,7 @@ output "origin" {
     svm_name         = module.fsxn_origin[0].svm_name
     svm_nfs_ip       = module.fsxn_origin[0].svm_nfs_ip
     volume_name      = var.origin_volume.name
+    volume_style     = var.origin_volume.volume_style
     junction_path    = var.origin_volume.junction_path
   } : null
 }

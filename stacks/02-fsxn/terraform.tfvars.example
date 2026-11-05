@@ -19,8 +19,13 @@ cache_fsxn = {
   ha_pairs                        = 1
 }
 
+# Origin volume: FlexGroup with storage efficiency on. A FlexGroup needs at least
+# 100 GiB per constituent (8 constituents by default = 800 GiB minimum).
 origin_volume = {
-  name          = "vol_origin"
-  size_gib      = 800
-  junction_path = "/vol_origin"
+  name                       = "vol_origin"
+  size_gib                   = 800
+  junction_path              = "/vol_origin"
+  volume_style               = "FLEXGROUP"
+  storage_efficiency_enabled = true
+  # constituents_per_aggregate = 4   # fewer constituents = smaller minimum size (4 x 100 GiB)
 }

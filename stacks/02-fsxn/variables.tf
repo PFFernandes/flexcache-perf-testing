@@ -91,11 +91,14 @@ variable "cache_fsxn" {
 }
 
 variable "origin_volume" {
-  description = "The origin FlexVol that the test dataset is written to and the FlexCache points at."
+  description = "The origin volume the test dataset is written to and the FlexCache points at. FlexGroup with storage efficiency on by default."
   type = object({
-    name          = optional(string, "vol_origin")
-    size_gib      = optional(number, 800)
-    junction_path = optional(string, "/vol_origin")
+    name                       = optional(string, "vol_origin")
+    size_gib                   = optional(number, 800) # FlexGroup minimum: 100 GiB x 8 constituents
+    junction_path              = optional(string, "/vol_origin")
+    volume_style               = optional(string, "FLEXGROUP")
+    constituents_per_aggregate = optional(number, null)
+    storage_efficiency_enabled = optional(bool, true)
   })
   default = {}
 }

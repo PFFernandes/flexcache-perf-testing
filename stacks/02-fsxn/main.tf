@@ -65,8 +65,11 @@ module "fsxn_origin" {
   svm_name = "svm_origin"
   volumes = {
     (var.origin_volume.name) = {
-      size_gib      = var.origin_volume.size_gib
-      junction_path = var.origin_volume.junction_path
+      size_gib                   = var.origin_volume.size_gib
+      junction_path              = var.origin_volume.junction_path
+      volume_style               = var.origin_volume.volume_style
+      constituents_per_aggregate = var.origin_volume.constituents_per_aggregate
+      storage_efficiency_enabled = var.origin_volume.storage_efficiency_enabled
     }
   }
 }

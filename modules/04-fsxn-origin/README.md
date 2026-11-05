@@ -1,6 +1,6 @@
 # modules/04-fsxn-origin — FSx for ONTAP Origin
 
-The FSx for ONTAP Origin: one file system + one SVM + the origin FlexVol volume(s) that hold the
+The FSx for ONTAP Origin: one file system + one SVM + the origin volume(s) – a **FlexGroup** by default – that hold the
 test data set. The FlexCache on the FSx for ONTAP Cache (`modules/05-fsxn-cache`) points at these
 volumes. Called by `stacks/02-fsxn` when `deploy_origin = true` (common.tfvars).
 
@@ -10,8 +10,9 @@ Design notes
 - The fsxadmin password is **the same on both FSx for ONTAP**. `stacks/02-fsxn` generates it once,
   stores it in one Secrets Manager secret (`<creator>-<project>/fsxadmin`, origin region) and passes it in as
   `fsxadmin_password`; `04-flexcache` reads that secret. No passwords live in tfvars or Git.
-- Defaults are tuned for clean performance numbers: `tiering_policy = NONE`, storage efficiency off,
-  no snapshot policy.
+- Origin volume defaults: **FlexGroup** (`volume_style = FLEXGROUP`, AWS default of 8 constituents on
+  `aggr1`, so at least 800 GiB), **storage efficiency on**, `tiering_policy = NONE` (data stays on
+  SSD), no snapshot policy. FlexCache supports FlexGroup origins.
 - Single-AZ is the default because its management endpoint is reachable across VPC peering
   (Multi-AZ management uses floating IPs that need Transit Gateway). Default is Gen1 `SINGLE_AZ_1`
   at 128 MBps, the smallest/cheapest size.
@@ -29,7 +30,7 @@ Design notes
 | `storage_capacity_gib` | `1024` |
 | `throughput_capacity_per_ha_pair` | `128` |
 | `ha_pairs` | `1` |
-| `volumes` | `{}` (stack 02 passes `vol_origin`, 800 GiB, `/vol_origin`) |
+| `volumes` | `{}` (stack 02 passes `vol_origin`: FlexGroup, 800 GiB, `/vol_origin`, storage efficiency on) |
 | `automatic_backup_retention_days` | `0` (no backups) |
 
 **Outputs:** `security_group_id`, `file_system_id`, `management_ip`, `intercluster_ips`, `svm_id`,
