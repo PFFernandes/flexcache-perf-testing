@@ -30,13 +30,13 @@ create manually.
 │   ├── 01-network-origin/      Network Origin: origin VPC, subnets, NAT (opt), S3        ✅ implemented
 │   ├── 02-network-cache/       Network Cache: cache VPC, subnets, NAT (opt), S3          ✅ implemented
 │   ├── 03-vpc-peering/         peering + routes, same- or cross-region                   ✅ implemented
-│   ├── 04-fsxn-origin/         FSx for ONTAP Origin: FS + SVM + origin vol + SG + secret 🔲 SG only
-│   ├── 05-fsxn-cache/          FSx for ONTAP Cache: FS + SVM + SG + secret (no volumes)  🔲 SG only
+│   ├── 04-fsxn-origin/         FSx for ONTAP Origin: FS + SVM + origin vol + SG          🔲 SG only
+│   ├── 05-fsxn-cache/          FSx for ONTAP Cache: FS + SVM + SG (no volumes)           🔲 SG only
 │   ├── 06-ec2-client/          AL2023 test client, SSM access, fio/nfs-utils             🔲 interface only
 │   └── 07-ontap-flexcache/     cluster peer + SVM peer + FlexCache (ONTAP provider)      🔲 interface only
 ├── stacks/                     what you actually deploy – one local state file per stack
 │   ├── 01-landing-zone/        Network Origin + Network Cache + peering [+ bastion]      ✅
-│   ├── 02-fsxn/                FSx for ONTAP Origin [+ Cache if enable_cache_fsxn]       wired
+│   ├── 02-fsxn/                FSx for ONTAP Origin [+ Cache] + shared fsxadmin secret   wired
 │   ├── 03-ec2/                 origin client [+ cache client if enable_cache_ec2]        wired
 │   └── 04-flexcache/           ONTAP: peering + FlexCache volume                         wired
 ├── scripts/
@@ -67,7 +67,7 @@ lower numbers, so deploy top-down and destroy bottom-up.
 | 01 | `01-landing-zone` | – | `01-network-origin`, `02-network-cache`, `03-vpc-peering` |
 | 02 | `02-fsxn` | `01-landing-zone` (VPC, subnets, CIDRs) | `04-fsxn-origin`, `05-fsxn-cache` |
 | 03 | `03-ec2` | `01-landing-zone` (subnets); can run in parallel with `02-fsxn` | `06-ec2-client` |
-| 04 | `04-flexcache` | `02-fsxn` (both FSx for ONTAP, mgmt + intercluster IPs, secrets) | `07-ontap-flexcache` |
+| 04 | `04-flexcache` | `02-fsxn` (both FSx for ONTAP, mgmt + intercluster IPs, shared fsxadmin secret) | `07-ontap-flexcache` |
 
 **Modules** (building blocks, in creation order):
 
@@ -174,7 +174,10 @@ cp stacks/01-landing-zone/terraform.tfvars.example stacks/01-landing-zone/terraf
 ## State lives on the bastion
 
 Each stack writes `stacks/<stack>/terraform.tfstate` on the bastion (git-ignored – it contains the
-generated fsxadmin passwords, so never commit it).
+generated fsxadmin password, so never commit it). Both FSx for ONTAP use the **same** fsxadmin
+password: `02-fsxn` generates it once and stores it in the Secrets Manager secret
+`<project>/fsxadmin` in the origin region. To read it on the bastion:
+`aws secretsmanager get-secret-value --secret-id <project>/fsxadmin --region <origin_region>`.
 
 - **Destroy the lab before you terminate the bastion**, or copy the `*.tfstate` files off first.
   Without them Terraform no longer knows what it created and you'd have to clean up by hand.

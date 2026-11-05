@@ -27,7 +27,7 @@ locals {
   })
 }
 
-# AWS is only used here to read the fsxadmin secrets.
+# AWS is only used here to read the shared fsxadmin secret (origin region).
 provider "aws" {
   alias  = "origin"
   region = var.origin_region
@@ -57,15 +57,15 @@ provider "netapp-ontap" {
     {
       name           = "origin"
       hostname       = local.origin.management_ip
-      username       = local.origin_creds.username
-      password       = local.origin_creds.password
+      username       = local.fsxadmin.username
+      password       = local.fsxadmin.password
       validate_certs = false # FSxN management uses a self-signed certificate
     },
     {
       name           = "cache"
       hostname       = try(local.cache.management_ip, "")
-      username       = try(local.cache_creds.username, "")
-      password       = try(local.cache_creds.password, "")
+      username       = local.fsxadmin.username # same credentials as the Origin
+      password       = local.fsxadmin.password
       validate_certs = false
     },
   ]

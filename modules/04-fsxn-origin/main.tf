@@ -2,12 +2,14 @@
 # The file system that holds the source data set. FlexCache on the
 # FSx for ONTAP Cache (modules/05-fsxn-cache) points at the volumes created here.
 #
+# The fsxadmin password is NOT generated here: stacks/02-fsxn generates one
+# password for both FSx for ONTAP and passes it in (var.fsxadmin_password).
+#
 # TODO (layer 2) - resources this module will still create:
 #
-#   random_password.fsxadmin
-#   aws_secretsmanager_secret(+_version).fsxadmin   JSON {"username":"fsxadmin","password":"..."}
 #   aws_fsx_ontap_file_system.this                  subnet_ids: first 1 (Single-AZ) or 2 (Multi-AZ),
 #                                                   security_group_ids = [aws_security_group.fsxn.id]
+#                                                   fsx_admin_password = var.fsxadmin_password
 #   aws_fsx_ontap_storage_virtual_machine.this      var.svm_name
 #   aws_fsx_ontap_volume.this (for_each var.volumes) the origin FlexVol(s)
 #

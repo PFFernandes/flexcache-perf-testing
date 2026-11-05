@@ -38,6 +38,8 @@ module "fsxn_origin" {
   throughput_capacity_per_ha_pair = var.origin_fsxn.throughput_capacity_per_ha_pair
   ha_pairs                        = var.origin_fsxn.ha_pairs
 
+  fsxadmin_password = random_password.fsxadmin.result # same password as the Cache (credentials.tf)
+
   svm_name = "svm_origin"
   volumes = {
     (var.origin_volume.name) = {
@@ -64,6 +66,8 @@ module "fsxn_cache" {
   storage_capacity_gib            = var.cache_fsxn.storage_capacity_gib
   throughput_capacity_per_ha_pair = var.cache_fsxn.throughput_capacity_per_ha_pair
   ha_pairs                        = var.cache_fsxn.ha_pairs
+
+  fsxadmin_password = random_password.fsxadmin.result # same password as the Origin (credentials.tf)
 
   svm_name = "svm_cache"
   # No volumes: the FlexCache volume is created by stacks/04-flexcache via the ONTAP API.

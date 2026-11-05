@@ -72,6 +72,13 @@ variable "endpoint_ip_address_range" {
   default     = null
 }
 
+variable "fsxadmin_password" {
+  description = "fsxadmin password. Generated once by stacks/02-fsxn and shared with the FSx for ONTAP Cache."
+  type        = string
+  sensitive   = true
+  nullable    = false
+}
+
 variable "svm_name" {
   description = "Name of the SVM created on the FSx for ONTAP Origin."
   type        = string

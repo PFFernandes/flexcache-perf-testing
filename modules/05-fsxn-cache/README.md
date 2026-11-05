@@ -5,12 +5,13 @@ The FSx for ONTAP Cache: one file system + one SVM that will host the FlexCache 
 at the origin volume on the FSx for ONTAP Origin (`modules/04-fsxn-origin`). Called by
 `stacks/02-fsxn` only when `enable_cache_fsxn = true`.
 
-Status: **security group implemented; file system, SVM and secret to be implemented**
+Status: **security group implemented; file system and SVM to be implemented**
 (see `main.tf`).
 
 Design notes
-- fsxadmin password is generated and stored in Secrets Manager; `04-flexcache` reads it from there,
-  so no passwords live in tfvars or Git.
+- The fsxadmin password is **the same on both FSx for ONTAP**. `stacks/02-fsxn` generates it once,
+  stores it in one Secrets Manager secret (`<project>/fsxadmin`, origin region) and passes it in as
+  `fsxadmin_password`; `04-flexcache` reads that secret. No passwords live in tfvars or Git.
 - Single-AZ is the default because its management endpoint is reachable across VPC peering
   (Multi-AZ management uses floating IPs that need Transit Gateway). Default is Gen1 `SINGLE_AZ_1`
   at 128 MBps, the smallest/cheapest size.
@@ -18,12 +19,12 @@ Design notes
   NFS TCP+UDP 111, 635, 2049, 4045-4046 and UDP 4049; TCP 443 + 22 (ONTAP management);
   TCP 11104-11105 (intercluster / FlexCache); ICMP. All egress allowed.
 
-**Tags:** every resource (security group and each of its rules today; file system, SVM, volumes and
-secret once implemented) gets the provider default tags plus `Module = "05-fsxn-cache"` and a `Name`.
+**Tags:** every resource (security group and each of its rules today; file system and SVM
+once implemented) gets the provider default tags plus `Module = "05-fsxn-cache"` and a `Name`.
 
 | Input | Default |
 |---|---|
-| `name`, `vpc_id`, `subnet_ids`, `allowed_cidrs` | required |
+| `name`, `vpc_id`, `subnet_ids`, `allowed_cidrs`, `fsxadmin_password` | required |
 | `svm_name` | `svm_cache` |
 | `deployment_type` | `SINGLE_AZ_1` |
 | `storage_capacity_gib` | `1024` |

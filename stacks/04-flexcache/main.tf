@@ -12,23 +12,19 @@ locals {
   origin = data.terraform_remote_state.fsxn.outputs.origin
   cache  = try(data.terraform_remote_state.fsxn.outputs.cache, null)
 
-  origin_creds = jsondecode(data.aws_secretsmanager_secret_version.origin_fsxadmin.secret_string)
-  cache_creds  = try(jsondecode(data.aws_secretsmanager_secret_version.cache_fsxadmin.secret_string), null)
+  # Same fsxadmin credentials for both FSx for ONTAP (one shared secret from 02-fsxn).
+  fsxadmin = jsondecode(data.aws_secretsmanager_secret_version.fsxadmin.secret_string)
 }
 
-data "aws_secretsmanager_secret_version" "origin_fsxadmin" {
+# The shared secret lives in the origin region, so it is read through aws.origin.
+data "aws_secretsmanager_secret_version" "fsxadmin" {
   provider  = aws.origin
-  secret_id = local.origin.fsxadmin_secret_arn
-}
-
-data "aws_secretsmanager_secret_version" "cache_fsxadmin" {
-  provider  = aws.cache
-  secret_id = try(local.cache.fsxadmin_secret_arn, "")
+  secret_id = data.terraform_remote_state.fsxn.outputs.fsxadmin_secret.arn
 
   lifecycle {
     precondition {
       condition     = local.cache != null
-      error_message = "No cache FSxN in the 02-fsxn state. Set enable_cache_fsxn = true in stacks/02-fsxn, apply it, then run this stack."
+      error_message = "No FSx for ONTAP Cache in the 02-fsxn state. Set enable_cache_fsxn = true in stacks/02-fsxn, apply it, then run this stack."
     }
   }
 }
