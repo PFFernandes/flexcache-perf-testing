@@ -2,33 +2,36 @@
 # Keep these names stable; add fields rather than renaming them.
 
 output "origin" {
-  value = {
+  description = "null when deploy_origin = false."
+  value = var.deploy_origin ? {
     region                  = var.origin_region
-    vpc_id                  = module.origin_network.vpc_id
-    vpc_cidr                = module.origin_network.vpc_cidr
-    azs                     = module.origin_network.azs
-    private_subnet_ids      = module.origin_network.private_subnet_ids
-    public_subnet_ids       = module.origin_network.public_subnet_ids
-    private_route_table_ids = module.origin_network.private_route_table_ids
-  }
+    vpc_id                  = module.origin_network[0].vpc_id
+    vpc_cidr                = module.origin_network[0].vpc_cidr
+    azs                     = module.origin_network[0].azs
+    private_subnet_ids      = module.origin_network[0].private_subnet_ids
+    public_subnet_ids       = module.origin_network[0].public_subnet_ids
+    private_route_table_ids = module.origin_network[0].private_route_table_ids
+  } : null
 }
 
 output "cache" {
-  value = {
+  description = "null when deploy_cache = false."
+  value = var.deploy_cache ? {
     region                  = var.cache_region
-    vpc_id                  = module.cache_network.vpc_id
-    vpc_cidr                = module.cache_network.vpc_cidr
-    azs                     = module.cache_network.azs
-    private_subnet_ids      = module.cache_network.private_subnet_ids
-    public_subnet_ids       = module.cache_network.public_subnet_ids
-    private_route_table_ids = module.cache_network.private_route_table_ids
-  }
+    vpc_id                  = module.cache_network[0].vpc_id
+    vpc_cidr                = module.cache_network[0].vpc_cidr
+    azs                     = module.cache_network[0].azs
+    private_subnet_ids      = module.cache_network[0].private_subnet_ids
+    public_subnet_ids       = module.cache_network[0].public_subnet_ids
+    private_route_table_ids = module.cache_network[0].private_route_table_ids
+  } : null
 }
 
 output "peering_connection_id" {
-  value = module.peering.peering_connection_id
+  description = "null unless both sides are deployed."
+  value       = try(module.peering[0].peering_connection_id, null)
 }
 
 output "cross_region" {
-  value = module.peering.cross_region
+  value = var.origin_region != var.cache_region
 }

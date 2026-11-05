@@ -3,7 +3,7 @@
 The FSx for ONTAP Cache: one file system + one SVM that will host the FlexCache volume. It creates
 **no volumes**: `stacks/04-flexcache` creates the FlexCache volume through the ONTAP API, pointing
 at the origin volume on the FSx for ONTAP Origin (`modules/04-fsxn-origin`). Called by
-`stacks/02-fsxn` only when `enable_cache_fsxn = true`.
+`stacks/02-fsxn` only when `deploy_cache = true` (common.tfvars).
 
 Status: **security group implemented; file system and SVM to be implemented**
 (see `main.tf`).

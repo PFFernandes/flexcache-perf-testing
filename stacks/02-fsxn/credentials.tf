@@ -4,8 +4,8 @@
 # secret in the origin region; stacks/04-flexcache reads it from there for both
 # ONTAP connections. Nothing password-related lives in tfvars or Git.
 #
-# Generated even when enable_cache_fsxn = false, so adding the Cache later reuses
-# the same password.
+# Generated whichever side is deployed (deploy_origin / deploy_cache), so adding
+# the other side later reuses the same password.
 
 resource "random_password" "fsxadmin" {
   length           = 24

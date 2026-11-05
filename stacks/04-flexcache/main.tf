@@ -1,5 +1,5 @@
 # Layer 4 - ONTAP configuration: cluster peering + SVM peering + FlexCache volume.
-# Requires both FSxN file systems from 02-fsxn (enable_cache_fsxn = true).
+# Requires both FSx for ONTAP from 02-fsxn (deploy_origin = deploy_cache = true).
 
 data "terraform_remote_state" "fsxn" {
   backend = "local"
@@ -9,7 +9,7 @@ data "terraform_remote_state" "fsxn" {
 }
 
 locals {
-  origin = data.terraform_remote_state.fsxn.outputs.origin
+  origin = try(data.terraform_remote_state.fsxn.outputs.origin, null)
   cache  = try(data.terraform_remote_state.fsxn.outputs.cache, null)
 
   # Same fsxadmin credentials for both FSx for ONTAP (one shared secret from 02-fsxn).
@@ -23,8 +23,8 @@ data "aws_secretsmanager_secret_version" "fsxadmin" {
 
   lifecycle {
     precondition {
-      condition     = local.cache != null
-      error_message = "No FSx for ONTAP Cache in the 02-fsxn state. Set enable_cache_fsxn = true in stacks/02-fsxn, apply it, then run this stack."
+      condition     = local.origin != null && local.cache != null
+      error_message = "FlexCache needs both FSx for ONTAP. Set deploy_origin = true and deploy_cache = true in common.tfvars, apply 01-landing-zone and 02-fsxn, then run this stack."
     }
   }
 }
@@ -35,12 +35,12 @@ module "flexcache" {
   origin_cx_profile = "origin"
   cache_cx_profile  = "cache"
 
-  origin_intercluster_ips = local.origin.intercluster_ips
+  origin_intercluster_ips = try(local.origin.intercluster_ips, [])
   cache_intercluster_ips  = try(local.cache.intercluster_ips, [])
 
-  origin_svm_name    = local.origin.svm_name
+  origin_svm_name    = try(local.origin.svm_name, "")
   cache_svm_name     = try(local.cache.svm_name, "")
-  origin_volume_name = local.origin.volume_name
+  origin_volume_name = try(local.origin.volume_name, "")
 
   flexcache_name          = var.flexcache_name
   flexcache_size_gib      = var.flexcache_size_gib

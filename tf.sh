@@ -6,7 +6,7 @@
 # Examples:
 #   ./tf.sh 01-landing-zone init
 #   ./tf.sh 01-landing-zone plan
-#   ./tf.sh 02-fsxn apply -var enable_cache_fsxn=true
+#   ./tf.sh 02-fsxn apply -var deploy_cache=false
 #   ./tf.sh 04-flexcache destroy
 #   ./tf.sh 02-fsxn output
 #

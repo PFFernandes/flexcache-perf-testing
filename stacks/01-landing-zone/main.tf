@@ -1,7 +1,8 @@
-# Layer 1 - landing zone: Network Origin (origin VPC) + Network Cache (cache VPC)
-# + VPC peering between them.
-# Both VPCs are always created (they cost nothing except the optional NAT gateways),
-# so the cache side is ready whenever you decide to deploy a cache FSxN / EC2.
+# Layer 1 - landing zone:
+#   Network Origin (origin VPC)  when deploy_origin = true
+#   Network Cache  (cache VPC)   when deploy_cache  = true
+#   VPC peering between them     only when both are deployed
+# deploy_origin / deploy_cache come from common.tfvars and drive 02-fsxn too.
 
 # --- Availability Zones and subnets ------------------------------------------
 # AZs come from common.tfvars as letters (default ["a"] = <region>a). Unless the
@@ -25,6 +26,8 @@ locals {
 
 # --- Network Origin ----------------------------------------------------------
 module "origin_network" {
+  count = var.deploy_origin ? 1 : 0
+
   source    = "../../modules/01-network-origin"
   providers = { aws = aws.origin }
 
@@ -38,6 +41,8 @@ module "origin_network" {
 
 # --- Network Cache -----------------------------------------------------------
 module "cache_network" {
+  count = var.deploy_cache ? 1 : 0
+
   source    = "../../modules/02-network-cache"
   providers = { aws = aws.cache }
 
@@ -49,7 +54,10 @@ module "cache_network" {
   enable_nat_gateway   = var.cache_nat_gateway
 }
 
+# --- Peering (Origin <-> Cache) ---------------------------------------------
 module "peering" {
+  count = var.deploy_origin && var.deploy_cache ? 1 : 0
+
   source = "../../modules/03-vpc-peering"
   providers = {
     aws.requester = aws.origin
@@ -58,11 +66,29 @@ module "peering" {
 
   name = "${local.name_prefix}-origin-to-cache"
 
-  requester_vpc_id          = module.origin_network.vpc_id
-  requester_cidr            = module.origin_network.vpc_cidr
-  requester_route_table_ids = concat(module.origin_network.private_route_table_ids, module.origin_network.public_route_table_ids)
+  requester_vpc_id          = module.origin_network[0].vpc_id
+  requester_cidr            = module.origin_network[0].vpc_cidr
+  requester_route_table_ids = concat(module.origin_network[0].private_route_table_ids, module.origin_network[0].public_route_table_ids)
 
-  accepter_vpc_id          = module.cache_network.vpc_id
-  accepter_cidr            = module.cache_network.vpc_cidr
-  accepter_route_table_ids = concat(module.cache_network.private_route_table_ids, module.cache_network.public_route_table_ids)
+  accepter_vpc_id          = module.cache_network[0].vpc_id
+  accepter_cidr            = module.cache_network[0].vpc_cidr
+  accepter_route_table_ids = concat(module.cache_network[0].private_route_table_ids, module.cache_network[0].public_route_table_ids)
+}
+
+# --- State moves -------------------------------------------------------------
+# These modules got a count (deploy_origin / deploy_cache). The moves keep an
+# already-applied landing zone in place instead of destroying and recreating it.
+moved {
+  from = module.origin_network
+  to   = module.origin_network[0]
+}
+
+moved {
+  from = module.cache_network
+  to   = module.cache_network[0]
+}
+
+moved {
+  from = module.peering
+  to   = module.peering[0]
 }

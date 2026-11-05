@@ -1,6 +1,6 @@
 # Layer 3 - Linux test clients.
-#   Origin client: always (writes the test dataset to the origin volume).
-#   Cache client:  only when enable_cache_ec2 = true (read benchmark against the FlexCache).
+#   Origin client: when deploy_origin = true (writes the test dataset to the origin volume).
+#   Cache client:  when deploy_cache = true and enable_cache_ec2 = true (read benchmark).
 #
 # Depends only on 01-landing-zone, so it can be deployed before, after or in
 # parallel with 02-fsxn (FSxN creation can take 30+ minutes; the clients do not need to wait).
@@ -17,13 +17,15 @@ locals {
 
   # SSH/ICMP from both test VPCs. You reach the clients from your Mac with SSM
   # Session Manager, so nothing is open to the internet.
-  allowed_cidrs = [
-    local.lz.origin.vpc_cidr,
-    local.lz.cache.vpc_cidr,
-  ]
+  allowed_cidrs = compact([
+    try(local.lz.origin.vpc_cidr, null),
+    try(local.lz.cache.vpc_cidr, null),
+  ])
 }
 
 module "ec2_origin" {
+  count = var.deploy_origin ? 1 : 0
+
   source    = "../../modules/06-ec2-client"
   providers = { aws = aws.origin }
 
@@ -36,7 +38,7 @@ module "ec2_origin" {
 }
 
 module "ec2_cache" {
-  count = var.enable_cache_ec2 ? 1 : 0
+  count = var.deploy_cache && var.enable_cache_ec2 ? 1 : 0
 
   source    = "../../modules/06-ec2-client"
   providers = { aws = aws.cache }
@@ -47,4 +49,10 @@ module "ec2_cache" {
   instance_type         = var.cache_instance_type
   key_name              = var.key_name
   allowed_ingress_cidrs = local.allowed_cidrs
+}
+
+# ec2_origin got a count (deploy_origin); keep an already-applied client in place.
+moved {
+  from = module.ec2_origin
+  to   = module.ec2_origin[0]
 }

@@ -2,7 +2,7 @@
 
 Terraform automation to build an origin/cache FSx for ONTAP (FSxN) environment and measure
 FlexCache read performance. Everything is split into **layers you deploy one at a time**, the
-cache side is **optional** at every layer, and everything runs from **your Mac**: Terraform state
+**Origin, Cache or both** can be deployed (two switches in `common.tfvars`), and everything runs from **your Mac**: Terraform state
 stays on it, and the private FSxN management endpoints are reached through SSM tunnels, so no bastion
 host and no open inbound ports are needed.
 
@@ -128,17 +128,31 @@ comment with the Creator instead.
   management IPs, which must be known at plan time – so ONTAP config has to be a later stack.
 - **Faster iterations.** FSxN takes a long time to create; EC2/benchmark changes don't wait for it.
 
-## Optional cache side
+## Origin, Cache or both
 
-| What | Where | Default |
-|---|---|---|
-| Cache VPC + peering | `01-landing-zone` | always created (free, except NAT) |
-| FSx for ONTAP Cache | `02-fsxn` → `enable_cache_fsxn` | `false` |
-| Cache EC2 client | `03-ec2` → `enable_cache_ec2` | `false` |
-| FlexCache volume | `04-flexcache` | only run it once the cache FSxN exists |
+Two switches in `common.tfvars` decide which side exists. They are shared by every stack:
 
-Turning a toggle on and re-applying **adds** the cache resources without changing the origin ones.
-Turning it off removes only the cache resources.
+```hcl
+deploy_origin = true
+deploy_cache  = true
+```
+
+| What | Stack | `deploy_origin` | `deploy_cache` | Both |
+|---|---|---|---|---|
+| Network Origin (VPC, subnets) | `01-landing-zone` | ✅ | | ✅ |
+| Network Cache (VPC, subnets) | `01-landing-zone` | | ✅ | ✅ |
+| VPC peering Origin ⇄ Cache | `01-landing-zone` | | | ✅ only |
+| FSx for ONTAP Origin | `02-fsxn` | ✅ | | ✅ |
+| FSx for ONTAP Cache | `02-fsxn` | | ✅ | ✅ |
+| Origin / cache EC2 client | `03-ec2` | ✅ | ✅ + `enable_cache_ec2` | ✅ |
+| FlexCache volume | `04-flexcache` | | | ✅ only |
+
+- Always apply `01-landing-zone` before `02-fsxn` after changing a switch: a side's FSx for ONTAP
+  needs that side's network. `02-fsxn` stops with a clear error if it isn't there.
+- Switching a side on and re-applying **adds** it without touching the other side. Switching it off
+  **destroys** that side (run `04-flexcache destroy` first if FlexCache is in use, then `02-fsxn`,
+  then `01-landing-zone`).
+- Both switches `false` is rejected.
 
 ## Your Mac
 
@@ -166,10 +180,9 @@ export AWS_PROFILE=<your-profile>
 # 1. landing zone
 ./tf.sh 01-landing-zone init && ./tf.sh 01-landing-zone apply
 
-# 2. FSxN – origin first
+# 2. FSx for ONTAP – Origin and/or Cache, per deploy_origin / deploy_cache
 ./tf.sh 02-fsxn init && ./tf.sh 02-fsxn apply
-#    ...later, add the cache
-./tf.sh 02-fsxn apply -var enable_cache_fsxn=true      # or set it in stacks/02-fsxn/terraform.tfvars
+#    e.g. Origin first: deploy_cache = false, apply 01 + 02; later set it to true and apply 01 + 02 again
 
 # 3. EC2 clients (can run in parallel with step 2)
 ./tf.sh 03-ec2 init && ./tf.sh 03-ec2 apply
@@ -180,8 +193,8 @@ export AWS_PROFILE=<your-profile>
 ./tf.sh 04-flexcache init && ./tf.sh 04-flexcache apply   # terminal 2
 ```
 
-> Tip: once you use a toggle, put it in the stack's `terraform.tfvars` so a later plain `apply`
-> doesn't switch it back off.
+> Tip: keep `deploy_origin` / `deploy_cache` in `common.tfvars` rather than passing `-var`, so a
+> later plain `apply` doesn't switch a side back off.
 
 ## State lives on your Mac
 

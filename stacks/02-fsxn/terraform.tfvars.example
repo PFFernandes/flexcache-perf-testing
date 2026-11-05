@@ -1,7 +1,7 @@
 # Optional: copy to terraform.tfvars.
 
-# Step 1: FSx for ONTAP Origin only. Step 2: set to true and apply again to add the FSx for ONTAP Cache.
-enable_cache_fsxn = false
+# Which side is deployed (Origin, Cache or both) is set in common.tfvars:
+# deploy_origin / deploy_cache.
 
 # FSx for ONTAP Origin
 origin_fsxn = {

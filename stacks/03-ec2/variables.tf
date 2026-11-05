@@ -25,6 +25,23 @@ variable "cache_region" {
 # origin_azs / cache_azs are only used by 01-landing-zone (they shape the subnets);
 # declared here so the shared common.tfvars passes without warnings.
 
+variable "deploy_origin" {
+  description = "Deploy the Origin side: Network Origin (01-landing-zone) and FSx for ONTAP Origin (02-fsxn)."
+  type        = bool
+  default     = true
+}
+
+variable "deploy_cache" {
+  description = "Deploy the Cache side: Network Cache (01-landing-zone) and FSx for ONTAP Cache (02-fsxn)."
+  type        = bool
+  default     = true
+
+  validation {
+    condition     = var.deploy_origin || var.deploy_cache
+    error_message = "Nothing to deploy: set deploy_origin and/or deploy_cache to true in common.tfvars."
+  }
+}
+
 variable "origin_azs" {
   description = "AZ letters for the origin side, appended to origin_region (\"a\" = <region>a). One private subnet per AZ. Single-AZ FSxN uses the first, Multi-AZ needs two, e.g. [\"a\", \"b\"]."
   type        = list(string)
@@ -50,7 +67,7 @@ variable "cache_azs" {
 # --- toggles ---------------------------------------------------------------
 
 variable "enable_cache_ec2" {
-  description = "false = origin client only. Flip to true and re-apply to add a client in the cache VPC."
+  description = "Also deploy a client in the cache VPC (only when deploy_cache = true)."
   type        = bool
   default     = false
 }

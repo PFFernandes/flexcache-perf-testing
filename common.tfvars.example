@@ -8,6 +8,11 @@ creator = "pedro" # the only tag on every AWS resource: Creator = <this>
 origin_region = "eu-west-1"
 cache_region  = "eu-west-1"
 
+# What to deploy: Origin only, Cache only, or both (FlexCache needs both).
+# Used by 01-landing-zone (networks; peering only when both) and 02-fsxn (FSx for ONTAP).
+deploy_origin = true
+deploy_cache  = true
+
 # Availability Zones, as letters appended to the region ("a" = eu-west-1a).
 # One private subnet is created per AZ. Single-AZ FSx for ONTAP uses the first;
 # Multi-AZ needs two, e.g. ["a", "b"].
