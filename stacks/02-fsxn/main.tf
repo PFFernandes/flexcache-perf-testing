@@ -17,6 +17,9 @@ locals {
   # Both sides accept traffic from both VPCs: intercluster/FlexCache over the
   # peering, NFS from the clients, and the ONTAP REST API that stack 04 reaches
   # from your Mac through an SSM tunnel on the origin EC2 client.
+  has_origin_network = try(local.lz.origin, null) != null
+  has_cache_network  = try(local.lz.cache, null) != null
+
   allowed_cidrs = compact([
     try(local.lz.origin.vpc_cidr, null),
     try(local.lz.cache.vpc_cidr, null),
@@ -28,11 +31,11 @@ locals {
 resource "terraform_data" "landing_zone_check" {
   lifecycle {
     precondition {
-      condition     = !var.deploy_origin || try(local.lz.origin, null) != null
+      condition     = !var.deploy_origin || local.has_origin_network
       error_message = "deploy_origin = true but there is no Network Origin in the 01-landing-zone state. Run ./tf.sh 01-landing-zone apply first."
     }
     precondition {
-      condition     = !var.deploy_cache || try(local.lz.cache, null) != null
+      condition     = !var.deploy_cache || local.has_cache_network
       error_message = "deploy_cache = true but there is no Network Cache in the 01-landing-zone state. Run ./tf.sh 01-landing-zone apply first."
     }
   }
@@ -40,15 +43,16 @@ resource "terraform_data" "landing_zone_check" {
 
 # --- FSx for ONTAP Origin ----------------------------------------------------
 module "fsxn_origin" {
-  count = var.deploy_origin ? 1 : 0
+  # Skipped when the origin network is missing; terraform_data.landing_zone_check then explains why.
+  count = var.deploy_origin && local.has_origin_network ? 1 : 0
 
   source    = "../../modules/04-fsxn-origin"
   providers = { aws = aws.origin }
 
   name            = "${local.name_prefix}-origin"
-  vpc_id          = try(local.lz.origin.vpc_id, null)
-  subnet_ids      = try(local.lz.origin.private_subnet_ids, [])
-  route_table_ids = try(local.lz.origin.private_route_table_ids, [])
+  vpc_id          = local.lz.origin.vpc_id
+  subnet_ids      = local.lz.origin.private_subnet_ids
+  route_table_ids = local.lz.origin.private_route_table_ids
   allowed_cidrs   = local.allowed_cidrs
 
   deployment_type                 = var.origin_fsxn.deployment_type
@@ -69,15 +73,16 @@ module "fsxn_origin" {
 
 # --- FSx for ONTAP Cache -----------------------------------------------------
 module "fsxn_cache" {
-  count = var.deploy_cache ? 1 : 0
+  # Skipped when the cache network is missing; terraform_data.landing_zone_check then explains why.
+  count = var.deploy_cache && local.has_cache_network ? 1 : 0
 
   source    = "../../modules/05-fsxn-cache"
   providers = { aws = aws.cache }
 
   name            = "${local.name_prefix}-cache"
-  vpc_id          = try(local.lz.cache.vpc_id, null)
-  subnet_ids      = try(local.lz.cache.private_subnet_ids, [])
-  route_table_ids = try(local.lz.cache.private_route_table_ids, [])
+  vpc_id          = local.lz.cache.vpc_id
+  subnet_ids      = local.lz.cache.private_subnet_ids
+  route_table_ids = local.lz.cache.private_route_table_ids
   allowed_cidrs   = local.allowed_cidrs
 
   deployment_type                 = var.cache_fsxn.deployment_type

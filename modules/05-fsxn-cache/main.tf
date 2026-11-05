@@ -6,12 +6,10 @@
 # The fsxadmin password is NOT generated here: stacks/02-fsxn generates one
 # password for both FSx for ONTAP and passes it in (var.fsxadmin_password).
 #
-# TODO (layer 2) - resources this module will still create:
-#
-#   aws_fsx_ontap_file_system.this                  subnet_ids: first 1 (Single-AZ) or 2 (Multi-AZ),
-#                                                   security_group_ids = [aws_security_group.fsxn.id]
-#                                                   fsx_admin_password = var.fsxadmin_password
-#   aws_fsx_ontap_storage_virtual_machine.this      var.svm_name
+# Resources:
+#   aws_security_group.fsxn + rules                NFS, ONTAP management, intercluster
+#   aws_fsx_ontap_file_system.this                 first subnet (Single-AZ) or first two (Multi-AZ)
+#   aws_fsx_ontap_storage_virtual_machine.this     var.svm_name
 #
 # Tags: each resource gets Name = <var.name>-fsxn-... here, plus the Creator tag
 # from the provider default_tags. The file system will be <var.name>-fsxn.
@@ -84,4 +82,42 @@ resource "aws_vpc_security_group_egress_rule" "fsxn_all" {
   ip_protocol       = "-1"
 
   tags = { Name = "${var.name}-fsxn-egress-all" }
+}
+
+# --- File system -------------------------------------------------------------
+
+locals {
+  multi_az = startswith(var.deployment_type, "MULTI_AZ")
+}
+
+resource "aws_fsx_ontap_file_system" "this" {
+  deployment_type                 = var.deployment_type
+  storage_capacity                = var.storage_capacity_gib
+  throughput_capacity_per_ha_pair = var.throughput_capacity_per_ha_pair
+  ha_pairs                        = var.ha_pairs
+
+  # Single-AZ: the first subnet (= first AZ, default <region>a). Multi-AZ: the first two.
+  subnet_ids          = slice(var.subnet_ids, 0, local.multi_az ? 2 : 1)
+  preferred_subnet_id = var.subnet_ids[0]
+  security_group_ids  = [aws_security_group.fsxn.id]
+
+  # Multi-AZ only: floating endpoint IPs and the route tables that point at them.
+  route_table_ids           = local.multi_az ? var.route_table_ids : null
+  endpoint_ip_address_range = local.multi_az ? var.endpoint_ip_address_range : null
+
+  fsx_admin_password = var.fsxadmin_password # same password on Origin and Cache
+
+  automatic_backup_retention_days = var.automatic_backup_retention_days
+
+  tags = { Name = "${var.name}-fsxn" }
+}
+
+# --- SVM ---------------------------------------------------------------------
+
+resource "aws_fsx_ontap_storage_virtual_machine" "this" {
+  file_system_id             = aws_fsx_ontap_file_system.this.id
+  name                       = var.svm_name
+  root_volume_security_style = "UNIX" # NFS
+
+  tags = { Name = "${var.name}-${var.svm_name}" }
 }

@@ -5,8 +5,7 @@ The FSx for ONTAP Cache: one file system + one SVM that will host the FlexCache 
 at the origin volume on the FSx for ONTAP Origin (`modules/04-fsxn-origin`). Called by
 `stacks/02-fsxn` only when `deploy_cache = true` (common.tfvars).
 
-Status: **security group implemented; file system and SVM to be implemented**
-(see `main.tf`).
+Status: **implemented** – security group, file system (`<name>-fsxn`) and SVM.
 
 Design notes
 - The fsxadmin password is **the same on both FSx for ONTAP**. `stacks/02-fsxn` generates it once,
@@ -19,8 +18,7 @@ Design notes
   NFS TCP+UDP 111, 635, 2049, 4045-4046 and UDP 4049; TCP 443 + 22 (ONTAP management);
   TCP 11104-11105 (intercluster / FlexCache); ICMP. All egress allowed.
 
-**Tags:** every resource (security group and each of its rules today; file system and SVM
-once implemented) gets the `Creator` tag (provider default_tags, `creator` in `common.tfvars`) and a `Name` that starts with `<creator>-<project>` (`pedro-flexcache-perf-cache-fsxn-sg`, `...-fsxn` for the file system).
+**Tags:** every resource (security group and its rules, file system, SVM) gets the `Creator` tag (provider default_tags, `creator` in `common.tfvars`) and a `Name` that starts with `<creator>-<project>` (`pedro-flexcache-perf-cache-fsxn-sg`, `...-fsxn` for the file system).
 
 | Input | Default |
 |---|---|
@@ -30,3 +28,7 @@ once implemented) gets the `Creator` tag (provider default_tags, `creator` in `c
 | `storage_capacity_gib` | `1024` |
 | `throughput_capacity_per_ha_pair` | `128` |
 | `ha_pairs` | `1` |
+| `automatic_backup_retention_days` | `0` (no backups) |
+
+**Outputs:** `security_group_id`, `file_system_id`, `management_ip`, `intercluster_ips`, `svm_id`,
+`svm_name`, `svm_nfs_ip`.

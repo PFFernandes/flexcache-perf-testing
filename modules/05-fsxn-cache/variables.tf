@@ -77,6 +77,12 @@ variable "endpoint_ip_address_range" {
   default     = null
 }
 
+variable "automatic_backup_retention_days" {
+  description = "Daily automatic backups, kept this many days. 0 = off (default, lab data)."
+  type        = number
+  default     = 0
+}
+
 variable "fsxadmin_password" {
   description = "fsxadmin password. Generated once by stacks/02-fsxn and shared with the FSx for ONTAP Origin."
   type        = string

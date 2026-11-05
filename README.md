@@ -29,13 +29,13 @@ host and no open inbound ports are needed.
 │   ├── 01-network-origin/      Network Origin: origin VPC, subnets, NAT (opt), S3        ✅ implemented
 │   ├── 02-network-cache/       Network Cache: cache VPC, subnets, NAT (opt), S3          ✅ implemented
 │   ├── 03-vpc-peering/         peering + routes, same- or cross-region                   ✅ implemented
-│   ├── 04-fsxn-origin/         FSx for ONTAP Origin: FS + SVM + origin vol + SG          🔲 SG only
-│   ├── 05-fsxn-cache/          FSx for ONTAP Cache: FS + SVM + SG (no volumes)           🔲 SG only
+│   ├── 04-fsxn-origin/         FSx for ONTAP Origin: FS + SVM + origin vol + SG          ✅ implemented
+│   ├── 05-fsxn-cache/          FSx for ONTAP Cache: FS + SVM + SG (no volumes)           ✅ implemented
 │   ├── 06-ec2-client/          AL2023 test client, SSM access, fio/nfs-utils             🔲 interface only
 │   └── 07-ontap-flexcache/     cluster peer + SVM peer + FlexCache (ONTAP provider)      🔲 interface only
 ├── stacks/                     what you actually deploy – one local state file per stack
 │   ├── 01-landing-zone/        Network Origin + Network Cache + peering                  ✅
-│   ├── 02-fsxn/                FSx for ONTAP Origin [+ Cache] + shared fsxadmin secret   wired
+│   ├── 02-fsxn/                FSx for ONTAP Origin and/or Cache + fsxadmin secret     ✅
 │   ├── 03-ec2/                 origin client [+ cache client if enable_cache_ec2]        wired
 │   └── 04-flexcache/           ONTAP: peering + FlexCache volume                         wired
 ├── scripts/
