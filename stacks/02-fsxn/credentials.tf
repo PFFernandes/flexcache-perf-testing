@@ -1,7 +1,7 @@
 # --- fsxadmin password (shared) ----------------------------------------------
 # One password for BOTH FSx for ONTAP file systems (Origin and Cache), generated
 # here once and passed to both modules. It is stored in a single Secrets Manager
-# secret in the origin region; stacks/03-flexcache reads it from there for both
+# secret in the origin region; stacks/04-flexcache reads it from there for both
 # ONTAP connections. Nothing password-related lives in tfvars or Git.
 #
 # Generated whichever side is deployed (deploy_origin / deploy_cache), so adding

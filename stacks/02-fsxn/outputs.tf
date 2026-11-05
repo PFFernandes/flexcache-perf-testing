@@ -1,4 +1,4 @@
-# Contract consumed by 03-flexcache (and the test scripts) via terraform_remote_state.
+# Contract consumed by 04-flexcache (and the test scripts) via terraform_remote_state.
 
 # One secret for both FSx for ONTAP (same fsxadmin password), in the origin region.
 output "fsxadmin_secret" {

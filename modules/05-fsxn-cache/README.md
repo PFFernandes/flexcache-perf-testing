@@ -1,7 +1,7 @@
 # modules/05-fsxn-cache — FSx for ONTAP Cache
 
 The FSx for ONTAP Cache: one file system + one SVM that will host the FlexCache volume. It creates
-**no volumes**: `stacks/03-flexcache` creates the FlexCache volume through the ONTAP API, pointing
+**no volumes**: `stacks/04-flexcache` creates the FlexCache volume through the ONTAP API, pointing
 at the origin volume on the FSx for ONTAP Origin (`modules/04-fsxn-origin`). Called by
 `stacks/02-fsxn` only when `deploy_cache = true` (common.tfvars).
 
@@ -10,7 +10,7 @@ Status: **implemented** – security group, file system (`<name>-fsxn`) and SVM.
 Design notes
 - The fsxadmin password is **the same on both FSx for ONTAP**. `stacks/02-fsxn` generates it once,
   stores it in one Secrets Manager secret (`<creator>-<project>/fsxadmin`, origin region) and passes it in as
-  `fsxadmin_password`; `03-flexcache` reads that secret. No passwords live in tfvars or Git.
+  `fsxadmin_password`; `04-flexcache` reads that secret. No passwords live in tfvars or Git.
 - Single-AZ is the default because its management endpoint is reachable across VPC peering
   (Multi-AZ management uses floating IPs that need Transit Gateway). Default is Gen1 `SINGLE_AZ_1`
   at 128 MBps, the smallest/cheapest size.

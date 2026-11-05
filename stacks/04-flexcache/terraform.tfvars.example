@@ -5,7 +5,8 @@ flexcache_size_gib      = 500 # smaller than the dataset = test eviction; larger
 flexcache_junction_path = "/vol_cache"
 cache_aggregates        = ["aggr1"]
 
-# Default: connect straight to each management IP from 02-fsxn (needs a VPN or
-# other route from your Mac into the VPCs). Override only for e.g. a port forward:
+# Default: the local ends of scripts/ontap-tunnel.sh (helper EC2 + EICE).
+# Change together with ORIGIN_PORT / CACHE_PORT, or set to null to connect to the
+# management IPs directly (needs a VPN into the VPCs).
 # origin_ontap_endpoint = "localhost:8443"
 # cache_ontap_endpoint  = "localhost:9443"
