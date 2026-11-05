@@ -17,6 +17,20 @@ variable "cache_region" {
   type = string
 }
 
+# --- ONTAP endpoints (local ends of scripts/ontap-tunnel.sh) -----------------
+
+variable "origin_ontap_endpoint" {
+  description = "host:port the ONTAP provider uses for the FSx for ONTAP Origin management API."
+  type        = string
+  default     = "localhost:8443"
+}
+
+variable "cache_ontap_endpoint" {
+  description = "host:port the ONTAP provider uses for the FSx for ONTAP Cache management API."
+  type        = string
+  default     = "localhost:9443"
+}
+
 # --- FlexCache -------------------------------------------------------------
 
 variable "flexcache_name" {

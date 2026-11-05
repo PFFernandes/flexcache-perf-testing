@@ -34,13 +34,3 @@ provider "aws" {
     tags = local.tags
   }
 }
-
-# Region of the (manually created) bastion VPC. Only used when bastion_vpc_id is set.
-provider "aws" {
-  alias  = "bastion"
-  region = coalesce(var.bastion_region, var.origin_region)
-
-  default_tags {
-    tags = local.tags
-  }
-}

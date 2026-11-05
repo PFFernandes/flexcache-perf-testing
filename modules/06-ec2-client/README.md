@@ -9,8 +9,10 @@ Roles
 - **Origin client** – generates the dataset on the origin volume (`scripts/origin/`).
 - **Cache client** – mounts the FlexCache volume and runs the read benchmark (`scripts/cache/`).
 
-Terraform itself runs on your bastion, not on these clients. Access from the bastion is SSH over the
-bastion peering (set `key_name`), or SSM Session Manager.
+Terraform itself runs on your Mac, not on these clients. You reach them with SSM Session Manager
+(`aws ssm start-session`), so they need no public IP and no inbound rule from the internet. The
+origin client is also the SSM tunnel host that lets stack 04 reach both FSx for ONTAP management
+endpoints (`scripts/ontap-tunnel.sh`).
 
 **Tags:** every resource gets only the `Creator` tag, from the provider default_tags (`creator` in `common.tfvars`).
 The instance copies it onto its root EBS volume (`volume_tags`), which default_tags don't reach.

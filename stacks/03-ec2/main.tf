@@ -15,12 +15,12 @@ data "terraform_remote_state" "lz" {
 locals {
   lz = data.terraform_remote_state.lz.outputs
 
-  # SSH/ICMP from both test VPCs and from the bastion VPC (when peered).
-  allowed_cidrs = compact([
+  # SSH/ICMP from both test VPCs. You reach the clients from your Mac with SSM
+  # Session Manager, so nothing is open to the internet.
+  allowed_cidrs = [
     local.lz.origin.vpc_cidr,
     local.lz.cache.vpc_cidr,
-    try(local.lz.bastion.vpc_cidr, null),
-  ])
+  ]
 }
 
 module "ec2_origin" {

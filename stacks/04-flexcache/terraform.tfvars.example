@@ -4,3 +4,7 @@ flexcache_name          = "vol_cache"
 flexcache_size_gib      = 500 # smaller than the dataset = test eviction; larger = warm-cache reads
 flexcache_junction_path = "/vol_cache"
 cache_aggregates        = ["aggr1"]
+
+# Local ends of scripts/ontap-tunnel.sh (change both places if those ports are taken).
+# origin_ontap_endpoint = "localhost:8443"
+# cache_ontap_endpoint  = "localhost:9443"

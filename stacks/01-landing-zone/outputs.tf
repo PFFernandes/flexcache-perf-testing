@@ -32,12 +32,3 @@ output "peering_connection_id" {
 output "cross_region" {
   value = module.peering.cross_region
 }
-
-output "bastion" {
-  description = "null when no bastion VPC is peered."
-  value = local.with_bastion ? {
-    region   = coalesce(var.bastion_region, var.origin_region)
-    vpc_id   = var.bastion_vpc_id
-    vpc_cidr = local.bastion_cidr
-  } : null
-}

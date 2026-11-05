@@ -2,22 +2,21 @@
 
 Terraform automation to build an origin/cache FSx for ONTAP (FSxN) environment and measure
 FlexCache read performance. Everything is split into **layers you deploy one at a time**, the
-cache side is **optional** at every layer, and everything runs from **one bastion host** that you
-create manually.
+cache side is **optional** at every layer, and everything runs from **your Mac**: Terraform state
+stays on it, and the private FSxN management endpoints are reached through SSM tunnels, so no bastion
+host and no open inbound ports are needed.
 
 ```
-                    BASTION VPC (created by you, e.g. default VPC 172.31.0.0/16)
-                    ┌───────────────────────────────────────────┐
-                    │  Bastion host: git, terraform, aws cli    │
-                    │  runs every stack, holds the local state  │
-                    └──────────┬─────────────────────┬──────────┘
-                     peering   │                     │  peering
-             ORIGIN VPC (10.10.0.0/16)               ▼  CACHE VPC (10.20.0.0/16)
+   YOUR MAC: git, terraform, aws cli + Session Manager plugin, local state
+        │  AWS APIs (stacks 01-03)          SSM tunnel localhost:8443 / :9443 (stack 04)
+        ▼                                        ▼
+             ORIGIN VPC (10.10.0.0/16)                  CACHE VPC (10.20.0.0/16)
   ┌───────────────────────────────────────┐   VPC peering   ┌───────────────────────────────────────┐
   │  FSxN origin  (svm_origin/vol_origin) │◄──intercluster─►│  FSxN cache  (svm_cache/vol_cache)    │  optional
   │                                       │   TCP 11104/5   │      FlexCache of vol_origin          │
   │  EC2 origin client                    │                 │  EC2 cache client                     │  optional
   │   - writes the test dataset           │                 │   - mounts vol_cache, runs read tests │
+  │   - SSM tunnel host for both FSxN mgmt│                 │                                       │
   └───────────────────────────────────────┘                 └───────────────────────────────────────┘
        origin_region                                              cache_region (same or different)
 ```
@@ -35,11 +34,12 @@ create manually.
 │   ├── 06-ec2-client/          AL2023 test client, SSM access, fio/nfs-utils             🔲 interface only
 │   └── 07-ontap-flexcache/     cluster peer + SVM peer + FlexCache (ONTAP provider)      🔲 interface only
 ├── stacks/                     what you actually deploy – one local state file per stack
-│   ├── 01-landing-zone/        Network Origin + Network Cache + peering [+ bastion]      ✅
+│   ├── 01-landing-zone/        Network Origin + Network Cache + peering                  ✅
 │   ├── 02-fsxn/                FSx for ONTAP Origin [+ Cache] + shared fsxadmin secret   wired
 │   ├── 03-ec2/                 origin client [+ cache client if enable_cache_ec2]        wired
 │   └── 04-flexcache/           ONTAP: peering + FlexCache volume                         wired
 ├── scripts/
+│   ├── ontap-tunnel.sh         SSM tunnels Mac -> both FSxN mgmt endpoints (for stack 04)
 │   ├── origin/                 dataset generation
 │   └── cache/                  read benchmark
 ├── common.tfvars.example       project, creator, regions
@@ -51,8 +51,8 @@ deployable unit with its own state that calls modules ("build the origin FSxN, a
 enabled"). Stacks read each other's outputs from the local state files:
 
 ```
-01-landing-zone ──► 02-fsxn ──► 04-flexcache
-        └─────────► 03-ec2
+01-landing-zone ──► 02-fsxn ──┬──► 04-flexcache
+        └─────────► 03-ec2 ──┘   (origin client = SSM tunnel host)
 ```
 
 ## Creation order
@@ -67,7 +67,7 @@ lower numbers, so deploy top-down and destroy bottom-up.
 | 01 | `01-landing-zone` | – | `01-network-origin`, `02-network-cache`, `03-vpc-peering` |
 | 02 | `02-fsxn` | `01-landing-zone` (VPC, subnets, CIDRs) | `04-fsxn-origin`, `05-fsxn-cache` |
 | 03 | `03-ec2` | `01-landing-zone` (subnets); can run in parallel with `02-fsxn` | `06-ec2-client` |
-| 04 | `04-flexcache` | `02-fsxn` (both FSx for ONTAP, mgmt + intercluster IPs, shared fsxadmin secret) | `07-ontap-flexcache` |
+| 04 | `04-flexcache` | `02-fsxn` (both FSx for ONTAP, mgmt + intercluster IPs, shared fsxadmin secret) · `03-ec2` (origin client = SSM tunnel host) | `07-ontap-flexcache` |
 
 **Modules** (building blocks, in creation order):
 
@@ -122,27 +122,27 @@ comment with the Creator instead.
 Turning a toggle on and re-applying **adds** the cache resources without changing the origin ones.
 Turning it off removes only the cache resources.
 
-## The bastion host
+## Your Mac
 
-You create it by hand (it is deliberately **not** managed by this repo, so destroying the lab never
-destroys the machine that holds the state).
+Everything runs from your Mac; there is no bastion host.
 
-- **OS / tools:** any Linux, e.g. Amazon Linux 2023, with `git`, `terraform` ≥ 1.10 and `aws` CLI v2.
-- **Permissions:** an instance profile (IAM role) that can create VPCs, peering, FSx, EC2, IAM roles
-  and Secrets Manager secrets. In a sandbox account the simplest is `AdministratorAccess`
-  (`PowerUserAccess` is not enough – stack 03 creates IAM roles for the clients).
-- **Network:** its VPC CIDR must not overlap `10.10.0.0/16` / `10.20.0.0/16` (the default VPC,
-  `172.31.0.0/16`, is fine). Put its VPC ID in `stacks/01-landing-zone/terraform.tfvars` as
-  `bastion_vpc_id`; stack 01 then peers it with both test VPCs and adds the routes. That is what lets
-  stack 04 reach both FSxN management IPs, and lets you SSH from the bastion to the clients.
-- **Outbound internet** to download Terraform providers (registry.terraform.io, releases.hashicorp.com).
+- **Tools:** `brew install hashicorp/tap/terraform awscli jq` and
+  `brew install --cask session-manager-plugin` (Terraform ≥ 1.10, AWS CLI v2).
+- **AWS credentials:** a profile that can create VPCs, peering, FSx, EC2, IAM roles and Secrets
+  Manager secrets (`export AWS_PROFILE=<profile>`; in a sandbox account `AdministratorAccess` is
+  simplest – `PowerUserAccess` is not enough, stack 03 creates IAM roles for the clients).
+- **Reaching private IPs:** the FSxN management endpoints and the EC2 clients have private IPs only.
+  `scripts/ontap-tunnel.sh` opens SSM port forwards through the origin EC2 client to both management
+  IPs (the cache one over the origin ⇄ cache peering), and you log in to the clients with
+  `aws ssm start-session --target <instance-id>`. The clients reach SSM through the NAT gateway (on by
+  default in `01-landing-zone`).
 
-## Deploy (on the bastion)
+## Deploy (on your Mac)
 
 ```bash
-git clone <this repo> && cd flexcache-perf-testing
+git clone https://github.com/PFFernandes/flexcache-perf-testing.git && cd flexcache-perf-testing
 cp common.tfvars.example common.tfvars                                   # regions, project, creator
-cp stacks/01-landing-zone/terraform.tfvars.example stacks/01-landing-zone/terraform.tfvars   # set bastion_vpc_id
+export AWS_PROFILE=<your-profile>
 
 # 1. landing zone
 ./tf.sh 01-landing-zone init && ./tf.sh 01-landing-zone apply
@@ -156,32 +156,34 @@ cp stacks/01-landing-zone/terraform.tfvars.example stacks/01-landing-zone/terraf
 ./tf.sh 03-ec2 init && ./tf.sh 03-ec2 apply
 ./tf.sh 03-ec2 apply -var enable_cache_ec2=true
 
-# 4. FlexCache (needs both FSxN)
-./tf.sh 04-flexcache init && ./tf.sh 04-flexcache apply
+# 4. FlexCache (needs both FSxN and the origin client)
+./scripts/ontap-tunnel.sh                              # terminal 1: keep it running
+./tf.sh 04-flexcache init && ./tf.sh 04-flexcache apply   # terminal 2
 ```
 
 > Tip: once you use a toggle, put it in the stack's `terraform.tfvars` so a later plain `apply`
 > doesn't switch it back off.
 
-## State lives on the bastion
+## State lives on your Mac
 
-Each stack writes `stacks/<stack>/terraform.tfstate` on the bastion (git-ignored – it contains the
+Each stack writes `stacks/<stack>/terraform.tfstate` in your clone (git-ignored – it contains the
 generated fsxadmin password, so never commit it). Both FSx for ONTAP use the **same** fsxadmin
 password: `02-fsxn` generates it once and stores it in the Secrets Manager secret
-`<project>/fsxadmin` in the origin region. To read it on the bastion:
+`<project>/fsxadmin` in the origin region. To read it:
 `aws secretsmanager get-secret-value --secret-id <project>/fsxadmin --region <origin_region>`.
 
-- **Destroy the lab before you terminate the bastion**, or copy the `*.tfstate` files off first.
-  Without them Terraform no longer knows what it created and you'd have to clean up by hand.
+- **Don't delete the clone before you destroy the lab**, and keep a backup of the `*.tfstate` files
+  (e.g. Time Machine). Without them Terraform no longer knows what it created and you'd have to
+  clean up by hand.
 - Moving to S3 later is a one-file change per stack (`backend.tf`) plus `terraform init -migrate-state`.
 
 ## Destroy (reverse order)
 
 ```bash
-./tf.sh 04-flexcache destroy     # remove FlexCache + peering relationships first
+./tf.sh 04-flexcache destroy     # needs scripts/ontap-tunnel.sh running; removes FlexCache + peering first
 ./tf.sh 03-ec2 destroy
 ./tf.sh 02-fsxn destroy
-./tf.sh 01-landing-zone destroy  # also removes the bastion peering + the routes it added
+./tf.sh 01-landing-zone destroy
 ```
 
 ## Network notes
@@ -189,9 +191,9 @@ password: `02-fsxn` generates it once and stores it in the Secrets Manager secre
 - VPC CIDRs must not overlap (defaults: origin `10.10.0.0/16`, cache `10.20.0.0/16`).
 - FlexCache and cluster peering use the FSxN **intercluster** endpoints (IPs inside the VPC), which
   route over the origin ⇄ cache peering.
-- **Single-AZ** FSxN is the default: its management endpoint is also inside the VPC, so the bastion
-  reaches it over the bastion peering. Multi-AZ management/NFS endpoints use floating IPs that don't
-  route over peering (would need Transit Gateway).
+- **Single-AZ** FSxN is the default: its management endpoint is an IP inside the VPC, so the SSM
+  tunnel through the origin client reaches it (the cache one over the peering). Multi-AZ
+  management/NFS endpoints use floating IPs that don't route over peering (would need Transit Gateway).
 
 ## Cost reminders
 

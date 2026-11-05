@@ -17,26 +17,6 @@ variable "cache_region" {
   type = string
 }
 
-# --- bastion (the host you run this automation from) ------------------------
-
-variable "bastion_vpc_id" {
-  description = "VPC of your manually created bastion host. When set, it is peered with both the origin and the cache VPC, so the bastion can reach the FSxN management IPs (stack 04) and the EC2 clients. null = no bastion peering."
-  type        = string
-  default     = null
-}
-
-variable "bastion_region" {
-  description = "Region of the bastion VPC. null = origin_region."
-  type        = string
-  default     = null
-}
-
-variable "bastion_route_table_ids" {
-  description = "Bastion VPC route tables that get routes to the origin and cache CIDRs. null = all route tables in the bastion VPC."
-  type        = list(string)
-  default     = null
-}
-
 # --- origin VPC ------------------------------------------------------------
 
 variable "origin_vpc_cidr" {

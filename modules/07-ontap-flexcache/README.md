@@ -10,8 +10,9 @@ because the AWS API has no cluster peering or FlexCache operations:
 Status: **interface defined, resources to be implemented** (see `main.tf`).
 
 The provider talks HTTPS to both FSxN **management** endpoints, which are private IPs. So stack 04
-must run from somewhere that can reach them: your bastion, whose VPC `01-landing-zone` peers with
-both the origin and the cache VPC (`bastion_vpc_id`).
+runs from your Mac through `scripts/ontap-tunnel.sh`: SSM port forwards via the origin EC2 client to
+both management IPs (the cache one over the origin ⇄ cache peering). The provider then connects to
+`localhost:8443` (origin) and `localhost:9443` (cache).
 
 **Tags:** these are ONTAP objects, not AWS resources, so AWS tags don't apply. The FlexCache
 volume will carry an ONTAP comment with the Creator instead.

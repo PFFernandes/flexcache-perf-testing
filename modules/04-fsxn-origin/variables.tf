@@ -20,7 +20,7 @@ variable "route_table_ids" {
 }
 
 variable "allowed_cidrs" {
-  description = "CIDRs allowed to reach the file system (local VPC + peer VPC for intercluster/FlexCache + bastion VPC for the ONTAP REST API)."
+  description = "CIDRs allowed to reach the file system (local VPC + peer VPC: NFS clients, intercluster/FlexCache, and the ONTAP REST API via the SSM tunnel on the origin EC2 client)."
   type        = list(string)
 }
 

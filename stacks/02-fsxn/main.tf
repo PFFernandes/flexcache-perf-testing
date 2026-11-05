@@ -13,13 +13,13 @@ data "terraform_remote_state" "lz" {
 locals {
   lz = data.terraform_remote_state.lz.outputs
 
-  # Both sides accept traffic from both VPCs (intercluster over peering) and from
-  # the bastion VPC (ONTAP REST API for stack 04), when a bastion is peered.
-  allowed_cidrs = compact([
+  # Both sides accept traffic from both VPCs: intercluster/FlexCache over the
+  # peering, NFS from the clients, and the ONTAP REST API that stack 04 reaches
+  # from your Mac through an SSM tunnel on the origin EC2 client.
+  allowed_cidrs = [
     local.lz.origin.vpc_cidr,
     local.lz.cache.vpc_cidr,
-    try(local.lz.bastion.vpc_cidr, null),
-  ])
+  ]
 }
 
 # --- FSx for ONTAP Origin ----------------------------------------------------

@@ -45,20 +45,21 @@ provider "aws" {
 # own stack: provider settings must be known at plan time, so the FSxN endpoints
 # have to exist (stack 02) before this stack is planned.
 #
-# Must run from a host that can reach both management IPs on TCP 443: the bastion,
-# peered to both VPCs by 01-landing-zone (bastion_vpc_id).
+# The management IPs are private, so from your Mac the provider goes through
+# local SSM port forwards opened by scripts/ontap-tunnel.sh (via the origin
+# EC2 client). Keep that script running while you plan/apply this stack.
 provider "netapp-ontap" {
   connection_profiles = [
     {
       name           = "origin"
-      hostname       = local.origin.management_ip
+      hostname       = var.origin_ontap_endpoint
       username       = local.fsxadmin.username
       password       = local.fsxadmin.password
       validate_certs = false # FSxN management uses a self-signed certificate
     },
     {
       name           = "cache"
-      hostname       = try(local.cache.management_ip, "")
+      hostname       = var.cache_ontap_endpoint
       username       = local.fsxadmin.username # same credentials as the Origin
       password       = local.fsxadmin.password
       validate_certs = false
