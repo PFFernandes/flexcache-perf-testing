@@ -8,8 +8,8 @@ variable "private_subnet_cidrs" {
   type        = list(string)
 
   validation {
-    condition     = length(var.private_subnet_cidrs) >= 1
-    error_message = "At least one private subnet is required."
+    condition     = length(var.private_subnet_cidrs) >= 1 && (length(var.azs) == 0 || length(var.private_subnet_cidrs) == length(var.azs))
+    error_message = "Give exactly one private subnet per AZ in azs (at least one)."
   }
 }
 
@@ -20,7 +20,7 @@ variable "public_subnet_cidrs" {
 }
 
 variable "azs" {
-  description = "Availability zones to use, in order. Empty = first available AZs in the region."
+  description = "Availability zones, in order (e.g. [\"eu-west-1a\"]). Private subnet i goes to azs[i]; public subnets start in azs[0]. Empty = first available AZs in the region."
   type        = list(string)
   default     = []
 }

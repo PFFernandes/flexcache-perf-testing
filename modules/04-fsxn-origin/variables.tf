@@ -9,8 +9,13 @@ variable "vpc_id" {
 }
 
 variable "subnet_ids" {
-  description = "Private subnets. Single-AZ uses the first one, Multi-AZ the first two."
+  description = "Private subnets. Single-AZ uses the first one, Multi-AZ the first two (in different AZs)."
   type        = list(string)
+
+  validation {
+    condition     = !startswith(var.deployment_type, "MULTI_AZ") || length(var.subnet_ids) >= 2
+    error_message = "Multi-AZ needs subnets in two AZs: set origin_azs = [\"a\", \"b\"] in common.tfvars and apply 01-landing-zone first."
+  }
 }
 
 variable "route_table_ids" {

@@ -42,7 +42,7 @@ host and no open inbound ports are needed.
 │   ├── ontap-tunnel.sh         SSM tunnels Mac -> both FSxN mgmt endpoints (for stack 04)
 │   ├── origin/                 dataset generation
 │   └── cache/                  read benchmark
-├── common.tfvars.example       project, creator, regions
+├── common.tfvars.example       project, creator, regions, AZs
 └── tf.sh                       wrapper: ./tf.sh <stack> <command>
 ```
 
@@ -141,7 +141,7 @@ Everything runs from your Mac; there is no bastion host.
 
 ```bash
 git clone https://github.com/PFFernandes/flexcache-perf-testing.git && cd flexcache-perf-testing
-cp common.tfvars.example common.tfvars                                   # regions, project, creator
+cp common.tfvars.example common.tfvars                                   # regions, AZs, project, creator
 export AWS_PROFILE=<your-profile>
 
 # 1. landing zone
@@ -188,6 +188,11 @@ password: `02-fsxn` generates it once and stores it in the Secrets Manager secre
 
 ## Network notes
 
+- **Availability Zones** are set in `common.tfvars` as letters added to the region:
+  `origin_azs = ["a"]` and `cache_azs = ["a"]` (default `<region>a`, e.g. `eu-west-1a`). Each AZ gets
+  one private /24 (`x.x.1.0`, `x.x.2.0`, ...), and the first AZ also gets one public /24 (`x.x.101.0`)
+  when NAT is on. Single-AZ FSx for ONTAP and the EC2 clients use the first AZ. Multi-AZ FSx for ONTAP
+  needs two, e.g. `["a", "b"]`; `02-fsxn` stops with an error otherwise.
 - VPC CIDRs must not overlap (defaults: origin `10.10.0.0/16`, cache `10.20.0.0/16`).
 - FlexCache and cluster peering use the FSxN **intercluster** endpoints (IPs inside the VPC), which
   route over the origin ⇄ cache peering.

@@ -7,3 +7,9 @@ creator = "pedro" # the only tag on every AWS resource: Creator = <this>
 # (cross-region test, e.g. measure FlexCache over real WAN latency).
 origin_region = "eu-west-1"
 cache_region  = "eu-west-1"
+
+# Availability Zones, as letters appended to the region ("a" = eu-west-1a).
+# One private subnet is created per AZ. Single-AZ FSx for ONTAP uses the first;
+# Multi-AZ needs two, e.g. ["a", "b"].
+origin_azs = ["a"]
+cache_azs  = ["a"]
