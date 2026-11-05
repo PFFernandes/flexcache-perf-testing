@@ -1,4 +1,4 @@
-# scripts/cache – read performance measurement (runs on the cache EC2 client)
+# scripts/cache – read performance measurement (runs on an NFS client of the FlexCache volume)
 
 Planned:
 

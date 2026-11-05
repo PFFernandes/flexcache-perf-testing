@@ -81,7 +81,7 @@ variable "origin_public_subnet_cidrs" {
 }
 
 variable "origin_nat_gateway" {
-  description = "true = public subnet + internet gateway + NAT gateway in the origin VPC. Only the EC2 clients need it (SSM, git); FSx for ONTAP never does."
+  description = "true = public subnet + internet gateway + NAT gateway in the origin VPC. FSx for ONTAP never needs it; keep it off unless you add instances that need the internet."
   type        = bool
   default     = false
 }
@@ -106,7 +106,7 @@ variable "cache_public_subnet_cidrs" {
 }
 
 variable "cache_nat_gateway" {
-  description = "true = public subnet + internet gateway + NAT gateway in the cache VPC. Only the EC2 clients need it (SSM, git); FSx for ONTAP never does."
+  description = "true = public subnet + internet gateway + NAT gateway in the cache VPC. FSx for ONTAP never needs it; keep it off unless you add instances that need the internet."
   type        = bool
   default     = false
 }

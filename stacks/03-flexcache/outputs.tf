@@ -1,4 +1,4 @@
-# Enabled once modules/07-ontap-flexcache exposes its outputs (layer 4 implementation).
+# Enabled once modules/06-ontap-flexcache exposes its outputs (layer 4 implementation).
 #
 # output "flexcache" {
 #   value = {

@@ -64,18 +64,18 @@ variable "cache_azs" {
   }
 }
 
-# --- ONTAP endpoints (local ends of scripts/ontap-tunnel.sh) -----------------
+# --- ONTAP endpoints ------------------------------------------------------------
 
 variable "origin_ontap_endpoint" {
-  description = "host:port the ONTAP provider uses for the FSx for ONTAP Origin management API."
+  description = "host[:port] for the FSx for ONTAP Origin management API. null = its management IP from 02-fsxn."
   type        = string
-  default     = "localhost:8443"
+  default     = null
 }
 
 variable "cache_ontap_endpoint" {
-  description = "host:port the ONTAP provider uses for the FSx for ONTAP Cache management API."
+  description = "host[:port] for the FSx for ONTAP Cache management API. null = its management IP from 02-fsxn."
   type        = string
-  default     = "localhost:9443"
+  default     = null
 }
 
 # --- FlexCache -------------------------------------------------------------

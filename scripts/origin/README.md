@@ -1,4 +1,4 @@
-# scripts/origin – dataset generation (runs on the origin EC2 client)
+# scripts/origin – dataset generation (runs on an NFS client of the origin volume)
 
 Planned:
 

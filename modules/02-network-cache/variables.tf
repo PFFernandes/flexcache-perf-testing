@@ -9,7 +9,7 @@ variable "cidr_block" {
 }
 
 variable "private_subnet_cidrs" {
-  description = "Private subnets (FSxN + EC2). One per AZ, in AZ order. Single-AZ FSxN uses the first, Multi-AZ the first two."
+  description = "Private subnets (FSx for ONTAP). One per AZ, in AZ order. Single-AZ FSxN uses the first, Multi-AZ the first two."
   type        = list(string)
 
   validation {

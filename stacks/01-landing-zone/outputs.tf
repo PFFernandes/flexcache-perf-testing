@@ -1,4 +1,4 @@
-# Contract consumed by 02-fsxn and 03-ec2 via terraform_remote_state.
+# Contract consumed by 02-fsxn via terraform_remote_state.
 # Keep these names stable; add fields rather than renaming them.
 
 output "origin" {

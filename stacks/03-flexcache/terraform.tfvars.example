@@ -5,6 +5,7 @@ flexcache_size_gib      = 500 # smaller than the dataset = test eviction; larger
 flexcache_junction_path = "/vol_cache"
 cache_aggregates        = ["aggr1"]
 
-# Local ends of scripts/ontap-tunnel.sh (change both places if those ports are taken).
+# Default: connect straight to each management IP from 02-fsxn (needs a VPN or
+# other route from your Mac into the VPCs). Override only for e.g. a port forward:
 # origin_ontap_endpoint = "localhost:8443"
 # cache_ontap_endpoint  = "localhost:9443"

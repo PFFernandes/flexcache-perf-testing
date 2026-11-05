@@ -1,10 +1,9 @@
 # modules/02-network-cache — Network Cache
 
-The cache VPC: it hosts the FSx for ONTAP Cache (`modules/05-fsxn-cache`) and the cache EC2 client
-(`modules/06-ec2-client`). Called once by `stacks/01-landing-zone` (`module "cache_network"`).
+The cache VPC: it hosts the FSx for ONTAP Cache (`modules/05-fsxn-cache`). Called once by `stacks/01-landing-zone` (`module "cache_network"`).
 Its counterpart on the origin side is `modules/01-network-origin`; `modules/03-vpc-peering` connects the two.
 
-**Creates:** VPC, private subnets (FSxN + EC2), optional public subnet + IGW + single NAT gateway,
+**Creates:** VPC, private subnets (FSx for ONTAP), optional public subnet + IGW + single NAT gateway,
 one private route table, a free S3 gateway endpoint, and adopts the VPC's default security group
 (locked down: no rules), main route table and default network ACL (allow-all, as AWS creates it)
 so that they are tagged too.

@@ -1,6 +1,6 @@
 # Network Cache
 # The VPC on the cache side of the test: it hosts the FSx for ONTAP Cache
-# (modules/05-fsxn-cache) and the cache EC2 client (modules/06-ec2-client).
+# (modules/05-fsxn-cache).
 
 data "aws_availability_zones" "available" {
   state = "available"
@@ -28,8 +28,8 @@ resource "aws_vpc" "this" {
 # AWS creates these with every VPC, untagged. Adopting them gives them the
 # Creator tag (provider default_tags) and a Name.
 
-# No rules = deny all. Nothing here uses the default SG (FSx for ONTAP and the
-# EC2 clients have their own), so it is locked down as a best practice.
+# No rules = deny all. Nothing here uses the default SG (FSx for ONTAP has its
+# own), so it is locked down as a best practice.
 resource "aws_default_security_group" "this" {
   vpc_id = aws_vpc.this.id
 

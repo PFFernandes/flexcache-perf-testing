@@ -1,8 +1,0 @@
-# Optional: copy to terraform.tfvars.
-
-# Step 1: origin client only. Step 2: set to true and apply again.
-enable_cache_ec2 = false
-
-origin_instance_type = "c6in.2xlarge"
-cache_instance_type  = "c6in.2xlarge"
-# key_name = "my-keypair"   # optional, SSM is the default access method
