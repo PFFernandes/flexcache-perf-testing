@@ -1,0 +1,19 @@
+#!/bin/bash
+# Rendered by modules/07-ec2-client. Mounts the FSx for ONTAP NFS paths under /mnt/fsxn.
+set -euxo pipefail
+
+# nfs-utils ships with Amazon Linux 2023; install only if missing (repos via the S3 endpoint).
+rpm -q nfs-utils >/dev/null || dnf install -y nfs-utils
+
+%{ for name, m in mounts ~}
+mkdir -p /mnt/fsxn/${name}
+grep -q " /mnt/fsxn/${name} " /etc/fstab || \
+  echo "${m.server}:${m.export} /mnt/fsxn/${name} nfs ${m.options},_netdev,nofail,x-systemd.automount,x-systemd.mount-timeout=30 0 0" >> /etc/fstab
+%{ endfor ~}
+
+systemctl daemon-reload
+systemctl restart remote-fs.target
+# First access triggers each automount; a path that isn't there yet (e.g. FlexCache) retries later.
+%{ for name, m in mounts ~}
+ls /mnt/fsxn/${name} >/dev/null 2>&1 || echo "mount /mnt/fsxn/${name} not available yet"
+%{ endfor ~}

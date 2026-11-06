@@ -3,16 +3,21 @@
 Terraform automation to build an origin/cache FSx for ONTAP (FSxN) environment and measure
 FlexCache read performance. Everything is split into **layers you deploy one at a time**,
 **Origin, Cache or both** can be deployed (two switches in `common.tfvars`), and everything runs
-from **your Mac**, where the Terraform state stays. No bastion host and no EC2 instances.
+from **your Mac**, where the Terraform state stays. No bastion host; optional Linux test clients
+(one per side) mount the FSx for ONTAP volumes over NFS.
 
 ```
    YOUR MAC: git, terraform, aws cli, local state
-        │  AWS APIs (stacks 01-02)          ONTAP REST API to both mgmt IPs (stack 03, needs a VPN path)
+        │  AWS APIs (stacks 01-04)          ONTAP REST API to both mgmt IPs (stack 03, needs a VPN path)
+        │  login: EC2 Instance Connect / SSM     │
         ▼                                        ▼
              ORIGIN VPC (10.10.0.0/16)                  CACHE VPC (10.20.0.0/16)
   ┌───────────────────────────────────────┐   VPC peering   ┌───────────────────────────────────────┐
   │  FSx for ONTAP Origin                 │◄──intercluster─►│  FSx for ONTAP Cache                  │
   │   svm_origin / vol_origin (FlexGroup) │   TCP 11104/5   │   svm_cache / vol_cache (FlexCache)   │
+  │        ▲ NFS                          │                 │        ▲ NFS                          │
+  │  EC2 origin client (same subnet)      │                 │  EC2 cache client (same subnet)       │
+  │   /mnt/fsxn/vol_origin                │                 │   /mnt/fsxn/vol_cache (+ vol_origin)  │
   └───────────────────────────────────────┘                 └───────────────────────────────────────┘
        origin_region                                              cache_region (same or different)
 ```
@@ -27,11 +32,13 @@ from **your Mac**, where the Terraform state stays. No bastion host and no EC2 i
 │   ├── 03-vpc-peering/         peering + routes, same- or cross-region                   ✅ implemented
 │   ├── 04-fsxn-origin/         FSx for ONTAP Origin: FS + SVM + origin vol + SG          ✅ implemented
 │   ├── 05-fsxn-cache/          FSx for ONTAP Cache: FS + SVM + SG (no volumes)           ✅ implemented
-│   └── 06-ontap-flexcache/     cluster peer + SVM peer + FlexCache (ONTAP provider)      🔲 interface only
+│   ├── 06-ontap-flexcache/     cluster peer + SVM peer + FlexCache (ONTAP provider)      🔲 interface only
+│   └── 07-ec2-client/          Linux client: NFS mounts, EC2 Instance Connect + SSM      ✅ implemented
 ├── stacks/                     what you actually deploy – one local state file per stack
 │   ├── 01-landing-zone/        Network Origin + Network Cache + peering                  ✅
 │   ├── 02-fsxn/                FSx for ONTAP Origin and/or Cache + fsxadmin secret     ✅
-│   └── 03-flexcache/           ONTAP: peering + FlexCache volume                         wired
+│   ├── 03-flexcache/           ONTAP: peering + FlexCache volume                         wired
+│   └── 04-ec2/                 origin client and/or cache client                         ✅
 ├── scripts/
 │   ├── origin/                 dataset generation
 │   └── cache/                  read benchmark
@@ -45,6 +52,7 @@ enabled"). Stacks read each other's outputs from the local state files:
 
 ```
 01-landing-zone ──► 02-fsxn ──► 03-flexcache
+                         └─────────► 04-ec2  (mounts the volumes; vol_cache once 03 exists)
 ```
 
 ## Creation order
@@ -52,13 +60,14 @@ enabled"). Stacks read each other's outputs from the local state files:
 Stacks and modules are both numbered in the order they are created. A number only ever depends on
 lower numbers, so deploy top-down and destroy bottom-up.
 
-**Stacks** (each has its own state; deploy `01` → `03`, destroy `03` → `01`):
+**Stacks** (each has its own state; deploy `01` → `04`, destroy `04` → `01`):
 
 | # | Stack | Depends on | Calls modules |
 |---|---|---|---|
 | 01 | `01-landing-zone` | – | `01-network-origin`, `02-network-cache`, `03-vpc-peering` |
 | 02 | `02-fsxn` | `01-landing-zone` (VPC, subnets, CIDRs) | `04-fsxn-origin`, `05-fsxn-cache` |
 | 03 | `03-flexcache` | `02-fsxn` (both FSx for ONTAP, mgmt + intercluster IPs, shared fsxadmin secret) | `06-ontap-flexcache` |
+| 04 | `04-ec2` | `01-landing-zone` (subnets) · `02-fsxn` (SVM NFS IPs, junction paths) · `03-flexcache` for the `vol_cache` mount (mounted on first access, so it can come later) | `07-ec2-client` |
 
 **Modules** (building blocks, in creation order):
 
@@ -70,11 +79,13 @@ lower numbers, so deploy top-down and destroy bottom-up.
 | 04 | `04-fsxn-origin` | Origin | `01`: VPC, private subnets · `03`: reachability for intercluster + mgmt | `02-fsxn` |
 | 05 | `05-fsxn-cache` | Cache | `02`: VPC, private subnets · `03` · created after the Origin it caches (`04`) | `02-fsxn` |
 | 06 | `06-ontap-flexcache` | both | `04` + `05`: mgmt/intercluster IPs, origin volume | `03-flexcache` |
+| 07 | `07-ec2-client` | both | `01`/`02`: subnet of the FSx for ONTAP · `04`/`05`: SVM NFS IP · `06`: FlexCache path | `04-ec2` |
 
 ```
 01-network-origin ──┐                  ┌──► 04-fsxn-origin ──┐
                     ├──► 03-vpc-peering┤                     ├──► 06-ontap-flexcache
 02-network-cache  ──┘                  └──► 05-fsxn-cache  ──┘
+                                        04 / 05 / 06 ───── NFS ─────────► 07-ec2-client
 ```
 
 ## Tagging and names
@@ -96,12 +107,14 @@ what it is:
 | peering | `pedro-flexcache-perf-origin-to-cache` |
 | FSx for ONTAP | `pedro-flexcache-perf-origin-fsxn`, its security group `...-origin-fsxn-sg` |
 | fsxadmin secret | `pedro-flexcache-perf/fsxadmin` |
+| EC2 clients | `pedro-flexcache-perf-origin-client`, `...-cache-client`, `...-origin-client-eice`, `...-origin-client-ssm-endpoint` |
 
 The prefix is `<creator>-<project>` from `common.tfvars`, so `creator` may only contain lowercase
 letters, digits and hyphens.
 
 Also tagged: the VPC's default security group, main route table and default network ACL, which AWS
-creates untagged (the network modules adopt them).
+creates untagged (the network modules adopt them), and the EC2 clients' root EBS volumes
+(`volume_tags`, which `default_tags` don't reach).
 
 Not taggable: routes and route-table associations (AWS has no tags for them), and ONTAP objects
 in `06-ontap-flexcache` (cluster peer, SVM peer, FlexCache). The FlexCache volume gets an ONTAP
@@ -131,6 +144,7 @@ deploy_cache  = true
 | FSx for ONTAP Origin | `02-fsxn` | ✅ | | ✅ |
 | FSx for ONTAP Cache | `02-fsxn` | | ✅ | ✅ |
 | FlexCache volume | `03-flexcache` | | | ✅ only |
+| EC2 client (+ `origin_ec2` / `cache_ec2`) | `04-ec2` | origin client | cache client | both |
 
 - Always apply `01-landing-zone` before `02-fsxn` after changing a switch: a side's FSx for ONTAP
   needs that side's network. `02-fsxn` stops with a clear error if it isn't there.
@@ -146,11 +160,17 @@ Everything runs from your Mac; there is no bastion host.
 - **Tools:** `brew install hashicorp/tap/terraform awscli` (Terraform ≥ 1.10, AWS CLI v2).
 - **AWS credentials:** a profile that can create VPCs, peering, FSx for ONTAP and Secrets Manager
   secrets (`export AWS_PROFILE=<profile>`; in a sandbox account `AdministratorAccess` is simplest).
-- **Stacks 01 and 02** only call AWS APIs, so they work from anywhere with internet.
+- **Stacks 01, 02 and 04** only call AWS APIs, so they work from anywhere with internet.
+- **Logging in to the EC2 clients** (they have no public IP): `aws ec2-instance-connect ssh
+  --instance-id <id> --connection-type eice` through the free EC2 Instance Connect Endpoint, or
+  `aws ssm start-session --target <id>` (needs the Session Manager plugin:
+  `brew install --cask session-manager-plugin`) through 3 SSM interface endpoints per VPC. Both are
+  created by `07-ec2-client`; `./tf.sh 04-ec2 output` prints the exact commands.
 - **Stack 03 (FlexCache)** talks to the ONTAP REST API on both FSx for ONTAP **management IPs**, which
   are private. Your Mac needs a network path into the VPCs for it, e.g. AWS Client VPN into the
   origin VPC (the cache one is reached over the peering). Not part of this repo yet.
-- No NAT gateway is needed: FSx for ONTAP never initiates internet traffic (NAT is off by default).
+- No NAT gateway is needed: FSx for ONTAP never initiates internet traffic, the clients reach SSM
+  through the interface endpoints and Amazon Linux packages through the S3 gateway endpoint.
 
 ## Deploy (on your Mac)
 
@@ -168,6 +188,10 @@ export AWS_PROFILE=<your-profile>
 
 # 3. FlexCache (needs both FSx for ONTAP and a network path to their management IPs)
 ./tf.sh 03-flexcache init && ./tf.sh 03-flexcache apply
+
+# 4. EC2 clients – mount vol_origin (origin) and vol_cache + vol_origin (cache) under /mnt/fsxn
+./tf.sh 04-ec2 init && ./tf.sh 04-ec2 apply        # can run before 03; vol_cache mounts once it exists
+./tf.sh 04-ec2 output                              # login commands and mounts
 ```
 
 > Tip: keep `deploy_origin` / `deploy_cache` in `common.tfvars` rather than passing `-var`, so a
@@ -189,6 +213,7 @@ password: `02-fsxn` generates it once and stores it in the Secrets Manager secre
 ## Destroy (reverse order)
 
 ```bash
+./tf.sh 04-ec2 destroy
 ./tf.sh 03-flexcache destroy     # removes FlexCache + peering first (needs the path to the mgmt IPs)
 ./tf.sh 02-fsxn destroy
 ./tf.sh 01-landing-zone destroy
@@ -211,3 +236,5 @@ password: `02-fsxn` generates it once and stores it in the Secrets Manager secre
 ## Cost reminders
 
 FSxN is billed per hour for throughput capacity + SSD. Destroy `02-fsxn` between test campaigns.
+Each EC2 client (`t3.small`) is about USD 0.02/h plus about USD 0.03/h per VPC for the 3 SSM
+endpoints (`enable_ssm = false` to skip them; the EC2 Instance Connect Endpoint is free).

@@ -1,0 +1,17 @@
+# Optional: copy to terraform.tfvars.
+
+# Which clients (each also needs deploy_origin / deploy_cache in common.tfvars).
+origin_ec2 = true
+cache_ec2  = true
+
+instance_type = "t3.small" # c6in.xlarge or larger for real performance numbers
+architecture  = "x86_64"   # arm64 for Graviton types (t4g, c7g ...)
+
+# Access from your Mac (no internet in the VPCs):
+enable_eice = true # aws ec2-instance-connect ssh --instance-id <id> --connection-type eice
+enable_ssm  = true # aws ssm start-session --target <id>   (3 interface endpoints per VPC)
+
+# NFS
+# nfs_options           = "vers=4.1,nconnect=8,hard,timeo=600"
+flexcache_junction_path = "/vol_cache" # same as stacks/03-flexcache
+cache_mounts_origin     = true         # cache client also mounts vol_origin over the peering
