@@ -121,7 +121,7 @@ variable "flexcache_junction_path" {
 }
 
 variable "cache_mounts_origin" {
-  description = "The cache client also mounts the origin volume over the peering (/mnt/fsxn/vol_origin) as a no-cache baseline."
+  description = "Off by default: the cache client mounts only the FSx for ONTAP Cache. true = it also mounts the origin volume over the peering (/mnt/fsxn/vol_origin) as a no-cache baseline."
   type        = bool
-  default     = true
+  default     = false
 }

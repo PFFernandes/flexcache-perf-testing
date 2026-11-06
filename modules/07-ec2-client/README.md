@@ -10,7 +10,7 @@ by `stacks/04-ec2` once for the origin and once for the cache (each switchable).
 | Client | Mounts |
 |---|---|
 | origin | `vol_origin` → `/mnt/fsxn/vol_origin` (write the data set) |
-| cache | `vol_cache` (FlexCache) → `/mnt/fsxn/vol_cache`, and `vol_origin` over the peering → `/mnt/fsxn/vol_origin` as a no-cache baseline |
+| cache | `vol_cache` (FlexCache) → `/mnt/fsxn/vol_cache`; with `cache_mounts_origin = true` also `vol_origin` over the peering as a no-cache baseline |
 
 **Access from your Mac** – no public IP, no internet gateway, no NAT:
 - **EC2 Instance Connect** (`enable_eice`, free): an endpoint in the subnet; only it may SSH to the client.

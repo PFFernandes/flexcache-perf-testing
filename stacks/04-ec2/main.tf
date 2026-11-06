@@ -1,9 +1,9 @@
 # Layer 4 - Linux test clients (Amazon Linux 2023), one per side:
 #   Origin client: origin VPC, same subnet as the FSx for ONTAP Origin.
-#                  Mounts vol_origin -> /mnt/fsxn/vol_origin (writes the data set).
+#                  Mounts only the Origin: vol_origin -> /mnt/fsxn/vol_origin.
 #   Cache client:  cache VPC, same subnet as the FSx for ONTAP Cache.
-#                  Mounts the FlexCache -> /mnt/fsxn/vol_cache and, as a baseline,
-#                  vol_origin over the peering -> /mnt/fsxn/vol_origin.
+#                  Mounts only the Cache: vol_cache (FlexCache) -> /mnt/fsxn/vol_cache.
+#                  cache_mounts_origin = true adds vol_origin over the peering as a baseline.
 # Each client is switched on with deploy_<side> (common.tfvars) AND <side>_ec2.
 # Reads the networks from 01-landing-zone and the NFS endpoints from 02-fsxn.
 

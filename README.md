@@ -20,7 +20,7 @@ them with **FlexCache**, and adds a Linux test client on each side to measure re
   │   svm_origin / vol_origin (FlexGroup)│◄──────────►│   svm_cache / vol_cache (FlexCache)  │
   │          ▲ NFS                       │intercluster│          ▲ NFS                       │
   │ EC2 origin client                    │TCP 11104/5 │ EC2 cache client                     │
-  │   /mnt/fsxn/vol_origin               │            │   /mnt/fsxn/vol_cache (+ vol_origin) │
+  │   /mnt/fsxn/vol_origin               │            │   /mnt/fsxn/vol_cache                │
   └──────────────────────────────────────┘            └──────────────────────────────────────┘
           origin_region                                     cache_region (same or different)
 ```
@@ -188,7 +188,7 @@ ONTAP**. At boot it adds the NFS mounts to `/etc/fstab` (systemd automount, moun
 | Client | Mounts |
 |---|---|
 | origin | `/mnt/fsxn/vol_origin` ← origin SVM `:/vol_origin` |
-| cache | `/mnt/fsxn/vol_cache` ← cache SVM `:/vol_cache` (FlexCache) · `/mnt/fsxn/vol_origin` ← origin SVM over the peering, as a no-cache baseline |
+| cache | `/mnt/fsxn/vol_cache` ← cache SVM `:/vol_cache` (FlexCache). Optional (`cache_mounts_origin = true`): `/mnt/fsxn/vol_origin` ← origin SVM over the peering, as a no-cache baseline |
 
 Default NFS options: `vers=3,nconnect=8,hard,timeo=600,retrans=2,rsize=1048576,wsize=1048576`
 (change with `nfs_options`).
