@@ -48,12 +48,10 @@ provider "aws" {
 # own stack: provider settings must be known at plan time, so the FSxN endpoints
 # have to exist (stack 02) before this stack is planned.
 #
-# The management IPs are private. From your Mac the provider goes through the
-# SSH tunnel of scripts/ontap-tunnel.sh (EC2 Instance Connect Endpoint + helper
-# EC2 from stack 03-helper): localhost:8443 = Origin, localhost:9443 = Cache.
-# Keep the script running while you plan/apply this stack.
-# Set origin_ontap_endpoint / cache_ontap_endpoint = null to connect to the
-# management IPs directly instead (e.g. over a VPN).
+# The provider connects to each FSx for ONTAP management IP (stack 02 output)
+# on HTTPS 443. Those IPs are private: your Mac needs a network path into the
+# VPCs (e.g. AWS Client VPN or Site-to-Site VPN). origin_ontap_endpoint /
+# cache_ontap_endpoint override the target, e.g. for a local port forward.
 provider "netapp-ontap" {
   connection_profiles = [
     {

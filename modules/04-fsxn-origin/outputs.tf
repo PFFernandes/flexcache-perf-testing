@@ -8,7 +8,7 @@ output "file_system_id" {
 }
 
 output "management_ip" {
-  description = "ONTAP management endpoint (REST API / SSH) - what stacks/04-flexcache connects to."
+  description = "ONTAP management endpoint (REST API / SSH) - what stacks/03-flexcache connects to."
   value       = sort(tolist(aws_fsx_ontap_file_system.this.endpoints[0].management[0].ip_addresses))[0]
 }
 

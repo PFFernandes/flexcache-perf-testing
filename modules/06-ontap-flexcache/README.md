@@ -1,4 +1,4 @@
-# modules/07-ontap-flexcache
+# modules/06-ontap-flexcache
 
 ONTAP-level configuration, done through the **NetApp/netapp-ontap** Terraform provider (ONTAP REST API),
 because the AWS API has no cluster peering or FlexCache operations:
@@ -9,11 +9,10 @@ because the AWS API has no cluster peering or FlexCache operations:
 
 Status: **interface defined, resources to be implemented** (see `main.tf`).
 
-The provider talks HTTPS to both FSxN **management** endpoints, which are private IPs. From your
-Mac it goes through `scripts/ontap-tunnel.sh`: an SSH tunnel through the EC2 Instance Connect
-Endpoint to the helper EC2 (`stacks/03-helper`), forwarding `localhost:8443` (origin) and
-`localhost:9443` (cache). The helper is only the path for these API calls; peering and FlexCache
-traffic flow cluster to cluster over the intercluster LIFs.
+The provider talks HTTPS to both FSxN **management** endpoints, which are private IPs. Stack 03
+connects to them directly, so the machine running it (your Mac) needs a network path into the VPCs,
+e.g. AWS Client VPN. `origin_ontap_endpoint` / `cache_ontap_endpoint` in stack 03 can point it
+elsewhere, e.g. at a local port forward.
 
 **Tags:** these are ONTAP objects, not AWS resources, so AWS tags don't apply. The FlexCache
 volume will carry an ONTAP comment with the Creator instead.

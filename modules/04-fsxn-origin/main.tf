@@ -15,7 +15,7 @@
 # from the provider default_tags. The file system will be <var.name>-fsxn.
 #
 # Outputs (see outputs.tf) expose the management + intercluster IPs that
-# stacks/04-flexcache needs for the ONTAP provider and cluster peering.
+# stacks/03-flexcache needs for the ONTAP provider and cluster peering.
 
 # --- Security group ----------------------------------------------------------
 # NFS (v3 + v4.x) plus what FlexCache and the ONTAP management API need.
@@ -36,7 +36,7 @@ locals {
     "nfs-nlm-nsm-udp"    = { protocol = "udp", from = 4045, to = 4046, description = "NFS lock manager (NLM) + status monitor (NSM)" }
     "nfs-rquotad-udp"    = { protocol = "udp", from = 4049, to = 4049, description = "NFS quota protocol (rquotad)" }
 
-    # Management - stacks/04-flexcache drives ONTAP over its REST API
+    # Management - stacks/03-flexcache drives ONTAP over its REST API
     "mgmt-https" = { protocol = "tcp", from = 443, to = 443, description = "ONTAP REST API / System Manager" }
     "mgmt-ssh"   = { protocol = "tcp", from = 22, to = 22, description = "ONTAP CLI (SSH)" }
 

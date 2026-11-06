@@ -7,7 +7,7 @@
 #   ./tf.sh 01-landing-zone init
 #   ./tf.sh 01-landing-zone plan
 #   ./tf.sh 02-fsxn apply -var deploy_cache=false
-#   ./tf.sh 04-flexcache destroy
+#   ./tf.sh 03-flexcache destroy
 #   ./tf.sh 02-fsxn output
 #
 # What it adds on top of plain terraform:

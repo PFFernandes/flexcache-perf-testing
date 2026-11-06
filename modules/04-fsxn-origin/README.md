@@ -9,7 +9,7 @@ Status: **implemented** – security group, file system (`<name>-fsxn`), SVM and
 Design notes
 - The fsxadmin password is **the same on both FSx for ONTAP**. `stacks/02-fsxn` generates it once,
   stores it in one Secrets Manager secret (`<creator>-<project>/fsxadmin`, origin region) and passes it in as
-  `fsxadmin_password`; `04-flexcache` reads that secret. No passwords live in tfvars or Git.
+  `fsxadmin_password`; `03-flexcache` reads that secret. No passwords live in tfvars or Git.
 - Origin volume defaults: **FlexGroup** (`volume_style = FLEXGROUP`, AWS default of 8 constituents on
   `aggr1`, so at least 800 GiB), **storage efficiency on**, `tiering_policy = NONE` (data stays on
   SSD), no snapshot policy. FlexCache supports FlexGroup origins.

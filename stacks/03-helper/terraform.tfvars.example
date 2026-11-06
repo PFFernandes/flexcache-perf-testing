@@ -1,4 +1,0 @@
-# Optional: copy to terraform.tfvars.
-
-helper_instance_type = "t4g.small"
-helper_architecture  = "arm64" # x86_64 for non-Graviton types, e.g. t3.small
