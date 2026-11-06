@@ -1,7 +1,7 @@
 # Copy to common.tfvars (git-ignored). tf.sh passes it to every stack.
 
 project = "flexcache-perf"
-creator = "pedro" # the only tag on every AWS resource: Creator = <this>
+creator = "pedro" # Creator tag on every AWS resource and start of every Name: <creator>-<project>-...
 
 # Origin and cache can be the same region (in-region test) or different regions
 # (cross-region test, e.g. measure FlexCache over real WAN latency).
@@ -9,7 +9,8 @@ origin_region = "eu-west-1"
 cache_region  = "eu-west-1"
 
 # What to deploy: Origin only, Cache only, or both (FlexCache needs both).
-# Used by 01-landing-zone (networks; peering only when both) and 02-fsxn (FSx for ONTAP).
+# Used by 01-landing-zone (networks; peering only when both), 02-fsxn (FSx for ONTAP)
+# and 04-ec2 (clients).
 deploy_origin = true
 deploy_cache  = true
 
