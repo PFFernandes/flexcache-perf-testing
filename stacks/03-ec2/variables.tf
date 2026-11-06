@@ -115,7 +115,7 @@ variable "nfs_options" {
 }
 
 variable "flexcache_junction_path" {
-  description = "Junction path of the FlexCache volume on the cache SVM (same as flexcache_junction_path in stacks/03-flexcache)."
+  description = "Junction path of the FlexCache volume on the cache SVM (same as flexcache_junction_path in stacks/04-flexcache)."
   type        = string
   default     = "/vol_cache"
 }

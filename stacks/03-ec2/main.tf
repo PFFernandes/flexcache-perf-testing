@@ -1,4 +1,4 @@
-# Layer 4 - Linux test clients (Amazon Linux 2023), one per side:
+# Layer 3 - Linux test clients (Amazon Linux 2023), one per side:
 #   Origin client: origin VPC, same subnet as the FSx for ONTAP Origin.
 #                  Mounts only the Origin: vol_origin -> /mnt/fsxn/vol_origin.
 #   Cache client:  cache VPC, same subnet as the FSx for ONTAP Cache.
@@ -64,7 +64,7 @@ resource "terraform_data" "prerequisites" {
 module "ec2_origin" {
   count = local.want_origin && local.has_origin ? 1 : 0
 
-  source    = "../../modules/07-ec2-client"
+  source    = "../../modules/06-ec2-client"
   providers = { aws = aws.origin }
 
   name          = "${local.name_prefix}-origin-client"
@@ -81,7 +81,7 @@ module "ec2_origin" {
 module "ec2_cache" {
   count = local.want_cache && local.has_cache ? 1 : 0
 
-  source    = "../../modules/07-ec2-client"
+  source    = "../../modules/06-ec2-client"
   providers = { aws = aws.cache }
 
   name          = "${local.name_prefix}-cache-client"

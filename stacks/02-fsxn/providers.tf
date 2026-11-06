@@ -14,7 +14,8 @@ terraform {
 }
 
 locals {
-  # The only tag on every AWS resource (via each provider's default_tags).
+  # Creator tag on every AWS resource (via each provider's default_tags); each
+  # resource adds its own Name.
   tags = { Creator = var.creator }
 
   # Every Name starts with this, e.g. pedro-flexcache-perf-origin-vpc.

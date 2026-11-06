@@ -2,7 +2,7 @@
 # One Linux test client (Amazon Linux 2023) in the same private subnet as the
 # FSx for ONTAP of its side. At boot it mounts the NFS paths in var.nfs_mounts
 # under /mnt/fsxn/<name> (systemd automount, so a path that doesn't exist yet,
-# e.g. the FlexCache volume before stack 03-flexcache, mounts on first access).
+# e.g. the FlexCache volume before stack 04-flexcache, mounts on first access).
 #
 # Access from your Mac, with no internet, NAT or public IP in the VPC:
 #   EC2 Instance Connect Endpoint   aws ec2-instance-connect ssh --instance-id <id>   (enable_eice)

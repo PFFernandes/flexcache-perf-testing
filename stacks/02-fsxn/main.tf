@@ -15,7 +15,7 @@ locals {
   lz = data.terraform_remote_state.lz.outputs
 
   # Both sides accept traffic from both VPCs: intercluster/FlexCache over the
-  # peering, NFS clients and the ONTAP REST API (stack 03-flexcache).
+  # peering, NFS clients and the ONTAP REST API (stack 04-flexcache).
   has_origin_network = try(local.lz.origin, null) != null
   has_cache_network  = try(local.lz.cache, null) != null
 
@@ -95,7 +95,7 @@ module "fsxn_cache" {
   fsxadmin_password = random_password.fsxadmin.result # same password as the Origin (credentials.tf)
 
   svm_name = "svm_cache"
-  # No volumes: the FlexCache volume is created by stacks/03-flexcache via the ONTAP API.
+  # No volumes: the FlexCache volume is created by stacks/04-flexcache via the ONTAP API.
 }
 
 # fsxn_origin got a count (deploy_origin); keep an already-applied Origin in place.

@@ -13,5 +13,5 @@ enable_ssm  = true # aws ssm start-session --target <id>   (3 interface endpoint
 
 # NFS
 # nfs_options           = "vers=4.1,nconnect=8,hard,timeo=600"
-flexcache_junction_path = "/vol_cache" # same as stacks/03-flexcache
+flexcache_junction_path = "/vol_cache" # same as stacks/04-flexcache
 cache_mounts_origin     = false        # true = cache client also mounts vol_origin over the peering (baseline)

@@ -10,13 +10,15 @@ terraform {
 }
 
 locals {
-  # The only tag on every AWS resource (via each provider's default_tags).
+  # Creator tag on every AWS resource (via each provider's default_tags); each
+  # resource adds its own Name.
   tags = { Creator = var.creator }
 
   # Every Name starts with this, e.g. pedro-flexcache-perf-origin-vpc.
   name_prefix = "${var.creator}-${var.project}"
 }
 
+# aws.origin: Secrets Manager endpoint, IAM policy and SSM Run Command in the origin region.
 provider "aws" {
   alias  = "origin"
   region = var.origin_region

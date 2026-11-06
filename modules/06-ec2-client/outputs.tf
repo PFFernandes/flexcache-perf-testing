@@ -22,3 +22,12 @@ output "connect_eice" {
 output "connect_ssm" {
   value = var.enable_ssm ? "aws ssm start-session --target ${aws_instance.this.id} --region ${data.aws_region.current.region}" : null
 }
+
+output "role_name" {
+  description = "IAM role of the instance (stacks/04-flexcache adds read access to the fsxadmin secret)."
+  value       = aws_iam_role.this.name
+}
+
+output "ssm_enabled" {
+  value = var.enable_ssm
+}

@@ -1,11 +1,11 @@
-# modules/07-ec2-client — Linux test client
+# modules/06-ec2-client — Linux test client
 
 One Amazon Linux 2023 instance in the **same private subnet as the FSx for ONTAP** of its side. Called
-by `stacks/04-ec2` once for the origin and once for the cache (each switchable).
+by `stacks/03-ec2` once for the origin and once for the cache (each switchable).
 
 **At boot** (user data) it adds every entry of `nfs_mounts` to `/etc/fstab` at `/mnt/fsxn/<name>` with
 `_netdev,nofail,x-systemd.automount`, so a path that doesn't exist yet (the FlexCache volume before
-`stacks/03-flexcache`) mounts on first access later instead of failing the boot.
+`stacks/04-flexcache`) mounts on first access later instead of failing the boot.
 
 | Client | Mounts |
 |---|---|
@@ -34,4 +34,7 @@ Both endpoints are per VPC, so each side's client brings its own.
 | `enable_eice` / `enable_ssm` | `true` / `true` |
 | `nfs_mounts` | `{}` – `name => { server, export, options }`; options default `vers=3,nconnect=8,hard,timeo=600,retrans=2,rsize=1048576,wsize=1048576` |
 
-**Outputs:** `instance_id`, `private_ip`, `eice_id`, `mounts`, `connect_eice`, `connect_ssm`.
+The **origin** client is also where `stacks/04-flexcache` runs the FlexCache configuration (SSM Run
+Command), so keep `enable_ssm = true` for it.
+
+**Outputs:** `instance_id`, `private_ip`, `eice_id`, `mounts`, `connect_eice`, `connect_ssm`, `role_name`, `ssm_enabled`.

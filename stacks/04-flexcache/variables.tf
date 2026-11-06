@@ -64,18 +64,12 @@ variable "cache_azs" {
   }
 }
 
-# --- ONTAP endpoints ------------------------------------------------------------
+# --- where it runs ------------------------------------------------------------------
 
-variable "origin_ontap_endpoint" {
-  description = "host[:port] for the FSx for ONTAP Origin management API. null = its management IP from 02-fsxn."
-  type        = string
-  default     = null
-}
-
-variable "cache_ontap_endpoint" {
-  description = "host[:port] for the FSx for ONTAP Cache management API. null = its management IP from 02-fsxn."
-  type        = string
-  default     = null
+variable "create_secrets_endpoint" {
+  description = "Create a Secrets Manager interface endpoint in the origin VPC so the origin client can read the fsxadmin password (~USD 0.01/h). false only if the VPC already has one."
+  type        = bool
+  default     = true
 }
 
 # --- FlexCache -------------------------------------------------------------
@@ -86,8 +80,9 @@ variable "flexcache_name" {
 }
 
 variable "flexcache_size_gib" {
-  type    = number
-  default = 500
+  description = "Smaller than the data set = test cache eviction; larger = warm-cache reads."
+  type        = number
+  default     = 500
 }
 
 variable "flexcache_junction_path" {

@@ -10,7 +10,7 @@ cache_region  = "eu-west-1"
 
 # What to deploy: Origin only, Cache only, or both (FlexCache needs both).
 # Used by 01-landing-zone (networks; peering only when both), 02-fsxn (FSx for ONTAP)
-# and 04-ec2 (clients).
+# and 03-ec2 (clients).
 deploy_origin = true
 deploy_cache  = true
 
