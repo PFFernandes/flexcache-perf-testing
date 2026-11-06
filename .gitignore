@@ -16,6 +16,7 @@ terraform.rc
 # --- Local, environment-specific config (commit the *.example files instead) ---
 *.tfvars
 *.tfvars.json
+*.tfvars.bak
 
 # --- Benchmark output ---
 results/

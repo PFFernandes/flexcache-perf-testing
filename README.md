@@ -37,6 +37,86 @@ them with **FlexCache**, and adds a Linux test client on each side to measure re
 Nothing here has been applied to AWS yet; every stack is checked with `terraform validate` and
 offline tests with a mocked AWS provider.
 
+## Run the whole lab, step by step
+
+Everything below runs on your Mac, from the repository folder.
+
+### 1. Get the code and the tools
+
+```bash
+git clone https://github.com/PFFernandes/flexcache-perf-testing.git
+cd flexcache-perf-testing
+brew install hashicorp/tap/terraform awscli
+brew install --cask session-manager-plugin      # only for SSM logins to the EC2 clients
+```
+
+### 2. Log in to AWS
+
+```bash
+aws configure sso                               # once: creates a profile, e.g. "flexcache"
+aws sso login --profile flexcache               # whenever the session expires
+export AWS_PROFILE=flexcache                    # in every terminal you use
+aws sts get-caller-identity                     # must print your account
+```
+
+(With access keys instead of SSO: `aws configure --profile flexcache`.)
+
+### 3. Create and edit the settings files
+
+```bash
+./scripts/init-tfvars.sh
+```
+
+This creates `common.tfvars` and `stacks/<stack>/terraform.tfvars` for every stack from the
+`.example` files. It never overwrites a file that already exists (`--force` recreates them and
+keeps a `.bak`). Then edit at least `common.tfvars`:
+
+| Setting | Example |
+|---|---|
+| `creator` | `"pedro"` (lowercase, digits, hyphens; starts every name) |
+| `project` | `"flexcache-perf"` |
+| `origin_region` / `cache_region` | `"eu-west-1"` |
+| `deploy_origin` / `deploy_cache` | `true` / `true` |
+| `origin_azs` / `cache_azs` | `["a"]` (= eu-west-1a) |
+
+Sizes and options of each stack are in its own `terraform.tfvars` (see [Settings](#settings)).
+
+### 4. Deploy the stacks in order
+
+Each stack: `init` once, then `plan` to review, then `apply` (type `yes` to confirm). Every plan
+or apply first prints the settings files it loaded, so check the regions there.
+
+| # | Commands | Creates | Time |
+|---|---|---|---|
+| 1 | `./tf.sh 01-landing-zone init`<br>`./tf.sh 01-landing-zone plan`<br>`./tf.sh 01-landing-zone apply` | Origin and Cache VPCs, subnets, S3 endpoint, peering | ~2 min |
+| 2 | `./tf.sh 02-fsxn init`<br>`./tf.sh 02-fsxn plan`<br>`./tf.sh 02-fsxn apply` | FSx for ONTAP Origin + Cache, SVMs, `vol_origin`, fsxadmin secret | 20-40 min, billed hourly |
+| 3 | `./tf.sh 03-flexcache init`<br>`./tf.sh 03-flexcache plan`<br>`./tf.sh 03-flexcache apply` | cluster peer, SVM peer, `vol_cache` | **not built yet** – skip for now (see [Status](#status)) |
+| 4 | `./tf.sh 04-ec2 init`<br>`./tf.sh 04-ec2 plan`<br>`./tf.sh 04-ec2 apply` | origin and cache EC2 clients, Instance Connect + SSM endpoints | ~5 min |
+
+Check what was created at any time with `./tf.sh <stack> output`.
+
+### 5. Log in to a client and check its mount
+
+```bash
+./tf.sh 04-ec2 output                           # instance IDs and the exact login commands
+aws ec2-instance-connect ssh --instance-id <origin-client-id> --connection-type eice
+```
+
+On the origin client:
+
+```bash
+df -h /mnt/fsxn/vol_origin                      # the FSx for ONTAP Origin volume
+sudo touch /mnt/fsxn/vol_origin/hello && ls -l /mnt/fsxn/vol_origin   # volume root is owned by root
+```
+
+The cache client mounts `/mnt/fsxn/vol_cache`; it only works once the FlexCache volume (stack 3)
+exists.
+
+### 6. Tear everything down
+
+When you're done (FSx for ONTAP is billed every hour), destroy in reverse order. See
+[Destroy](#destroy).
+
 ## Repository layout
 
 ```
@@ -55,6 +135,7 @@ offline tests with a mocked AWS provider.
 │   ├── 03-flexcache/
 │   └── 04-ec2/
 ├── scripts/
+│   ├── init-tfvars.sh         creates common.tfvars + every stack's terraform.tfvars
 │   ├── origin/                dataset generation (planned)
 │   └── cache/                 read benchmark (planned)
 ├── common.tfvars.example      settings shared by every stack
@@ -103,7 +184,7 @@ until the FlexCache volume exists (it mounts on first access).
 ## Settings
 
 Module variables are never set directly: each stack fills them in. You only edit these files
-(all git-ignored; copy them from the `.example` next to them):
+(all git-ignored). `./scripts/init-tfvars.sh` creates all of them from the `.example` next to them:
 
 | File | Main settings |
 |---|---|
@@ -155,30 +236,6 @@ deploy_cache  = true
 - **Stack 03** talks to the ONTAP REST API on both FSx for ONTAP management IPs, which are private.
   Your Mac needs a network path into the VPCs for it (e.g. AWS Client VPN into the origin VPC; the
   cache one is reached over the peering). That path is not part of this repo yet.
-
-## Deploy
-
-```bash
-git clone https://github.com/PFFernandes/flexcache-perf-testing.git
-cd flexcache-perf-testing
-cp common.tfvars.example common.tfvars          # edit project, creator, regions, switches, AZs
-export AWS_PROFILE=<your-profile>
-```
-
-```bash
-# 1. networks
-./tf.sh 01-landing-zone init && ./tf.sh 01-landing-zone apply
-
-# 2. FSx for ONTAP Origin and/or Cache (about 20-40 minutes each, billed hourly)
-./tf.sh 02-fsxn init && ./tf.sh 02-fsxn apply
-
-# 3. FlexCache (not built yet, see Status)
-./tf.sh 03-flexcache init && ./tf.sh 03-flexcache apply
-
-# 4. EC2 clients
-./tf.sh 04-ec2 init && ./tf.sh 04-ec2 apply
-./tf.sh 04-ec2 output                           # login commands and mount points
-```
 
 ## The EC2 clients
 
@@ -239,10 +296,12 @@ generated fsxadmin password, so never commit it.
 
 ## Destroy
 
+Reverse order, highest number first. Each asks for `yes`:
+
 ```bash
 ./tf.sh 04-ec2 destroy
-./tf.sh 03-flexcache destroy        # needs the path to the management IPs
-./tf.sh 02-fsxn destroy
+./tf.sh 03-flexcache destroy        # only once FlexCache is built; needs the path to the management IPs
+./tf.sh 02-fsxn destroy             # deletes both FSx for ONTAP and the fsxadmin secret
 ./tf.sh 01-landing-zone destroy
 ```
 
