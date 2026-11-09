@@ -140,6 +140,11 @@ resource "terraform_data" "flexcache" {
     }
   }
 
-  # The client needs the endpoint and the permission before (and during destroy) it runs.
-  depends_on = [aws_vpc_endpoint.secretsmanager, aws_iam_role_policy.read_fsxadmin]
+  # The client needs the endpoint, its HTTPS rule and the permission while this runs,
+  # on create and on destroy: Terraform removes them only after this resource.
+  depends_on = [
+    aws_vpc_endpoint.secretsmanager,
+    aws_vpc_security_group_ingress_rule.secrets_https,
+    aws_iam_role_policy.read_fsxadmin,
+  ]
 }
