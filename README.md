@@ -97,15 +97,18 @@ Sizes and options of each stack are in its own `terraform.tfvars` (see [Settings
 
 ### 4. Deploy the stacks in order
 
-Each stack: `init` once, then `plan` to review, then `apply` (type `yes` to confirm). Every plan
+Each stack: `init` once, then `plan` to review and save the plan, then `apply-plan` to apply exactly that plan (type `yes` to
+confirm). If anything changed in between, Terraform stops with `Saved plan is stale`: run `plan` again.
+Plain `apply` also works; it makes a fresh plan and asks for confirmation. The saved `terraform.tfplan`
+stays out of Git and is deleted after a successful `apply-plan`. It can hold the fsxadmin password, so don't share it. Every plan
 or apply first prints the settings files it loaded, so check the regions there.
 
 | # | Commands | Creates | Time |
 |---|---|---|---|
-| 1 | `./tf.sh 01-landing-zone init`<br>`./tf.sh 01-landing-zone plan`<br>`./tf.sh 01-landing-zone apply` | Origin and Cache VPCs, subnets, S3 endpoint, peering | ~2 min |
-| 2 | `./tf.sh 02-fsxn init`<br>`./tf.sh 02-fsxn plan`<br>`./tf.sh 02-fsxn apply` | FSx for ONTAP Origin + Cache, SVMs, `vol_origin`, fsxadmin secret | 20-40 min, billed hourly |
-| 3 | `./tf.sh 03-ec2 init`<br>`./tf.sh 03-ec2 plan`<br>`./tf.sh 03-ec2 apply` | origin and cache EC2 clients, Instance Connect + SSM endpoints | ~5 min |
-| 4 | `./tf.sh 04-flexcache init`<br>`./tf.sh 04-flexcache plan`<br>`./tf.sh 04-flexcache apply` | Secrets Manager endpoint, then on the origin client: cluster peer, SVM peer, `vol_cache` | ~5-10 min |
+| 1 | `./tf.sh 01-landing-zone init`<br>`./tf.sh 01-landing-zone plan`<br>`./tf.sh 01-landing-zone apply-plan` | Origin and Cache VPCs, subnets, S3 endpoint, peering | ~2 min |
+| 2 | `./tf.sh 02-fsxn init`<br>`./tf.sh 02-fsxn plan`<br>`./tf.sh 02-fsxn apply-plan` | FSx for ONTAP Origin + Cache, SVMs, `vol_origin`, fsxadmin secret | 20-40 min, billed hourly |
+| 3 | `./tf.sh 03-ec2 init`<br>`./tf.sh 03-ec2 plan`<br>`./tf.sh 03-ec2 apply-plan` | origin and cache EC2 clients, Instance Connect + SSM endpoints | ~5 min |
+| 4 | `./tf.sh 04-flexcache init`<br>`./tf.sh 04-flexcache plan`<br>`./tf.sh 04-flexcache apply-plan` | Secrets Manager endpoint, then on the origin client: cluster peer, SVM peer, `vol_cache` | ~5-10 min |
 
 During step 4 the apply prints the log of the origin client, e.g.
 `[flexcache] creating cluster peer ...`, `SVM peer state: peered`, `FlexCache vol_cache created`.
