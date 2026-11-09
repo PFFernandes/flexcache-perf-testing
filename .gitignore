@@ -25,3 +25,19 @@ results/
 .DS_Store
 .vscode/*
 !.vscode/extensions.json
+
+# --- Secrets and private keys (never commit these) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.ppk
+id_rsa
+id_rsa.*
+id_ecdsa
+id_ecdsa.*
+id_ed25519
+id_ed25519.*
