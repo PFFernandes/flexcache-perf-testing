@@ -283,8 +283,10 @@ deploy_cache  = true
 ## The EC2 clients
 
 Each client is an Amazon Linux 2023 instance in the **same private subnet as its side's FSx for
-ONTAP**. At boot it adds the NFS mounts to `/etc/fstab`, and a systemd timer retries `mount -a` every
-minute, so a volume that doesn't exist yet is mounted within a minute of being created:
+ONTAP**, with the Linux hostname `origin` or `cache`. At boot it adds the NFS mounts to `/etc/fstab`, and a systemd timer retries `mount -a` every
+minute, so a volume that doesn't exist yet is mounted within a minute of being created. Each mounted
+volume's top directory is set to `1777`, so `ssm-user` (SSM) and `ec2-user` (Instance Connect) can
+both write to it:
 
 | Client | Mounts |
 |---|---|
@@ -317,7 +319,8 @@ Every AWS resource gets two tags: `Creator` (from `creator`, set through the pro
 | Peering | `pedro-flexcache-perf-origin-to-cache` |
 | FSx for ONTAP | `pedro-flexcache-perf-origin-fsxn`, security group `...-origin-fsxn-sg` |
 | fsxadmin secret | `pedro-flexcache-perf/fsxadmin` |
-| EC2 clients | `pedro-flexcache-perf-origin-client`, `...-origin-client-eice`, `...-origin-client-ssm-endpoint`, `...-cache-client` |
+| EC2 instances (shorter on purpose: `<creator>-<side>-client`) | `pedro-origin-client`, `pedro-cache-client` |
+| EC2 supporting resources | `pedro-flexcache-perf-origin-client-eice`, `...-origin-client-ssm-endpoint`, `...-cache-client-sg` |
 | FlexCache (stack 04) | `pedro-flexcache-perf-flexcache-secretsmanager-endpoint`, policy `...-flexcache-read-fsxadmin` |
 
 `creator` may only contain lowercase letters, digits and hyphens, because it is part of every name.

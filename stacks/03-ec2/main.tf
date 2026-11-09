@@ -68,6 +68,8 @@ module "ec2_origin" {
   providers = { aws = aws.origin }
 
   name          = "${local.name_prefix}-origin-client"
+  instance_name = "${var.creator}-origin-client"
+  hostname      = "origin"
   vpc_id        = local.lz.origin.vpc_id
   subnet_id     = local.lz.origin.private_subnet_ids[0] # same subnet as the FSx for ONTAP Origin
   instance_type = var.instance_type
@@ -85,6 +87,8 @@ module "ec2_cache" {
   providers = { aws = aws.cache }
 
   name          = "${local.name_prefix}-cache-client"
+  instance_name = "${var.creator}-cache-client"
+  hostname      = "cache"
   vpc_id        = local.lz.cache.vpc_id
   subnet_id     = local.lz.cache.private_subnet_ids[0] # same subnet as the FSx for ONTAP Cache
   instance_type = var.instance_type

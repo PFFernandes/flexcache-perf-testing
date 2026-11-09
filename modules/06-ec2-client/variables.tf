@@ -1,6 +1,21 @@
 variable "name" {
-  description = "Instance name and prefix of its resources, e.g. pedro-flexcache-perf-origin-client."
+  description = "Prefix of the client's supporting resources (security groups, endpoints, IAM), e.g. pedro-flexcache-perf-origin-client."
   type        = string
+}
+
+variable "instance_name" {
+  description = "Name tag of the EC2 instance, e.g. pedro-origin-client."
+  type        = string
+}
+
+variable "hostname" {
+  description = "Linux hostname of the instance, e.g. origin."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", var.hostname))
+    error_message = "hostname must use lowercase letters, digits and hyphens, and can't start or end with a hyphen."
+  }
 }
 
 variable "vpc_id" {

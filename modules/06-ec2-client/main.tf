@@ -34,7 +34,8 @@ locals {
   ssm_services = var.enable_ssm ? toset(["ssm", "ssmmessages", "ec2messages"]) : toset([])
 
   user_data = templatefile("${path.module}/user_data.sh.tftpl", {
-    mounts = var.nfs_mounts
+    mounts   = var.nfs_mounts
+    hostname = var.hostname
   })
 }
 
@@ -194,12 +195,12 @@ resource "aws_instance" "this" {
   }
 
   user_data                   = local.user_data
-  user_data_replace_on_change = true # changed mounts = fresh instance
+  user_data_replace_on_change = true # changed mounts or hostname = fresh instance
 
   # default_tags don't reach the root volume, so copy them (Creator) plus a Name.
-  volume_tags = merge(data.aws_default_tags.current.tags, { Name = "${var.name}-root" })
+  volume_tags = merge(data.aws_default_tags.current.tags, { Name = "${var.instance_name}-root" })
 
-  tags = { Name = var.name }
+  tags = { Name = var.instance_name }
 
   # SSM agent needs its endpoints before it starts.
   depends_on = [aws_vpc_endpoint.ssm]

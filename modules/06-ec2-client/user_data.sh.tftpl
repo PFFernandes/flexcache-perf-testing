@@ -2,6 +2,11 @@
 # Rendered by modules/06-ec2-client. Mounts the FSx for ONTAP NFS paths under /mnt/fsxn.
 set -euxo pipefail
 
+# Hostname. preserve_hostname stops cloud-init restoring the default ip-10-... name on reboot.
+echo "preserve_hostname: true" > /etc/cloud/cloud.cfg.d/99-fsxn-hostname.cfg
+hostnamectl set-hostname ${hostname} || echo "could not set the hostname"
+grep -q " ${hostname}$" /etc/hosts || echo "127.0.0.1 ${hostname}" >> /etc/hosts
+
 # nfs-utils ships with Amazon Linux 2023; install only if missing (repos via the S3 endpoint).
 rpm -q nfs-utils >/dev/null || dnf install -y nfs-utils
 
@@ -10,6 +15,21 @@ mkdir -p /mnt/fsxn/${name}
 grep -q " /mnt/fsxn/${name} " /etc/fstab || \
   echo "${m.server}:${m.export} /mnt/fsxn/${name} nfs ${m.options},_netdev,nofail 0 0" >> /etc/fstab
 %{ endfor ~}
+
+# Mounts everything in /etc/fstab, then makes each mounted volume writable by any
+# login. SSM sessions run as ssm-user and Instance Connect as ec2-user, while a new
+# volume's top directory is writable only by root. 1777 is the same model as /tmp.
+cat > /usr/local/sbin/fsxn-mount <<'SCRIPT'
+#!/bin/bash
+/usr/bin/mount -a -t nfs || true
+for dir in /mnt/fsxn/*; do
+  /usr/bin/mountpoint -q "$dir" || continue
+  [[ "$(/usr/bin/stat -c %a "$dir")" == "1777" ]] && continue
+  /usr/bin/chmod 1777 "$dir" || echo "fsxn-mount: could not open permissions on $dir"
+done
+exit 0
+SCRIPT
+chmod 755 /usr/local/sbin/fsxn-mount
 
 # A volume may not exist yet when the client boots (the FlexCache comes later, from
 # stacks/04-flexcache), so retry every minute. `mount -a` skips what is already
@@ -22,7 +42,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=-/usr/bin/mount -a -t nfs
+ExecStart=-/usr/local/sbin/fsxn-mount
 TimeoutStartSec=90
 UNIT
 

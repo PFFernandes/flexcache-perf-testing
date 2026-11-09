@@ -6,7 +6,9 @@ by `stacks/03-ec2` once for the origin and once for the cache (each switchable).
 **At boot** (user data) it adds every entry of `nfs_mounts` to `/etc/fstab` at `/mnt/fsxn/<name>` with
 `_netdev,nofail`, and a systemd timer (`fsxn-mount.timer`) runs `mount -a -t nfs` every minute. So a
 path that doesn't exist yet (the FlexCache volume before `stacks/04-flexcache`) doesn't fail the
-boot, and is mounted within a minute of appearing. It also remounts after a reboot.
+boot, and is mounted within a minute of appearing. It also remounts after a reboot. Each mounted
+volume's top directory is set to `1777` (like `/tmp`), so non-root logins (`ssm-user`, `ec2-user`) can
+write; a stricter mode set by hand is put back to `1777` on the next run.
 
 | Client | Mounts |
 |---|---|
@@ -23,7 +25,8 @@ boot, and is mounted within a minute of appearing. It also remounts after a rebo
 Both endpoints are per VPC, so each side's client brings its own.
 
 **Tags:** every resource gets the `Creator` tag and a `Name` starting with `<creator>-<project>`
-(`pedro-flexcache-perf-origin-client`, `...-sg`, `...-eice`, `...-ssm-endpoint`, `...-root`, `...-role`).
+(`pedro-flexcache-perf-origin-client-sg`, `...-eice`, `...-ssm-endpoint`, `...-role`). The instance itself uses the
+shorter `instance_name` (`pedro-origin-client`, root volume `pedro-origin-client-root`), and `hostname` sets its Linux hostname.
 
 | Input | Default |
 |---|---|
