@@ -11,6 +11,14 @@ Linux test client on each side, and connects the two file systems with **FlexCac
   Run Command, and the client creates the cluster peer, SVM peer and FlexCache volume through the
   ONTAP REST API.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/architecture-dark.svg">
+  <img src="docs/architecture-light.svg" alt="Architecture: the operator machine runs Terraform against AWS; the origin VPC holds the FSx for ONTAP Origin (vol_origin) and the origin EC2 client, the cache VPC holds the FSx for ONTAP Cache (vol_cache, the FlexCache) and the cache EC2 client; the VPCs are peered and FlexCache data flows between the file systems over TCP 11104-11105.">
+</picture>
+
+<details>
+<summary>Text version of the diagram</summary>
+
 ```
   YOUR MAC  ── terraform, aws cli, local state
      │  AWS APIs (all stacks), SSM Run Command (stack 04)
@@ -27,6 +35,8 @@ Linux test client on each side, and connects the two file systems with **FlexCac
   └──────────────────────────────────────┘            └──────────────────────────────────────┘
           origin_region                                     cache_region (same or different)
 ```
+
+</details>
 
 ## Status
 
