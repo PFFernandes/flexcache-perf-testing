@@ -41,6 +41,14 @@ locals {
 resource "terraform_data" "prerequisites" {
   lifecycle {
     precondition {
+      condition     = local.net != null
+      error_message = "No Network Origin in the 01-landing-zone state. Set deploy_origin = true and apply 01-landing-zone first."
+    }
+    precondition {
+      condition     = local.secret != null
+      error_message = "No fsxadmin secret in the 02-fsxn state. Apply 02-fsxn first."
+    }
+    precondition {
       condition     = local.origin != null && local.cache != null
       error_message = "FlexCache needs both FSx for ONTAP. Set deploy_origin = true and deploy_cache = true in common.tfvars and apply 01-landing-zone and 02-fsxn first."
     }

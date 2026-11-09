@@ -4,8 +4,9 @@ One Amazon Linux 2023 instance in the **same private subnet as the FSx for ONTAP
 by `stacks/03-ec2` once for the origin and once for the cache (each switchable).
 
 **At boot** (user data) it adds every entry of `nfs_mounts` to `/etc/fstab` at `/mnt/fsxn/<name>` with
-`_netdev,nofail,x-systemd.automount`, so a path that doesn't exist yet (the FlexCache volume before
-`stacks/04-flexcache`) mounts on first access later instead of failing the boot.
+`_netdev,nofail`, and a systemd timer (`fsxn-mount.timer`) runs `mount -a -t nfs` every minute. So a
+path that doesn't exist yet (the FlexCache volume before `stacks/04-flexcache`) doesn't fail the
+boot, and is mounted within a minute of appearing. It also remounts after a reboot.
 
 | Client | Mounts |
 |---|---|

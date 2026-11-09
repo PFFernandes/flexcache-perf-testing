@@ -128,7 +128,7 @@ sudo touch /mnt/fsxn/vol_origin/hello && ls -l /mnt/fsxn/vol_origin
 On the cache client:
 
 ```bash
-df -h /mnt/fsxn/vol_cache                       # FSx for ONTAP Cache, the FlexCache volume
+df -h /mnt/fsxn/vol_cache                       # FSx for ONTAP Cache, up to a minute after step 4
 ls -l /mnt/fsxn/vol_cache                       # shows "hello", served through the cache
 ```
 
@@ -197,7 +197,7 @@ modules:  01-network-origin ──┐                ┌──► 04-fsxn-origin
 | 07 | `07-ontap-flexcache` | both | 04 + 05: management/intercluster IPs, SVMs, origin volume · 06: the origin client runs it |
 
 The cache client's `/mnt/fsxn/vol_cache` is configured in step 3 but only mounts once step 4 has
-created the FlexCache volume (it is a systemd automount, tried again on every access).
+created the FlexCache volume (a timer on the client retries every minute).
 
 ## How FlexCache is configured (stack 04)
 
@@ -283,7 +283,8 @@ deploy_cache  = true
 ## The EC2 clients
 
 Each client is an Amazon Linux 2023 instance in the **same private subnet as its side's FSx for
-ONTAP**. At boot it adds the NFS mounts to `/etc/fstab` (systemd automount, mounted on first access):
+ONTAP**. At boot it adds the NFS mounts to `/etc/fstab`, and a systemd timer retries `mount -a` every
+minute, so a volume that doesn't exist yet is mounted within a minute of being created:
 
 | Client | Mounts |
 |---|---|
