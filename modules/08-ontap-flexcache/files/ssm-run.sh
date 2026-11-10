@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
-# Runs on YOUR MAC (Terraform local-exec in modules/07-ontap-flexcache).
-# Sends flexcache.py to the origin EC2 client with SSM Run Command, waits for it
-# to finish and prints its output. Exit code 0 only if the script succeeded.
+# Runs on YOUR MAC (Terraform local-exec in modules/08-ontap-flexcache).
+# Sends the FlexCache script to the origin EC2 client with SSM Run Command, waits
+# for it to finish and prints its output. Exit code 0 only if the script succeeded.
+#   Linux client (protocol nfs):   flexcache.py  with AWS-RunShellScript
+#   Windows client (protocol smb): flexcache.ps1 with AWS-RunPowerShellScript
 #
 # Environment (set by Terraform):
 #   ACTION        create | delete
 #   REGION        region of the origin client
 #   INSTANCE_ID   origin client instance ID
-#   SCRIPT_GZ64   flexcache.py, gzip + base64
+#   CLIENT_OS     linux | windows (default linux)
+#   SCRIPT_GZ64   the script, gzip + base64
 #   CONFIG_B64    JSON config, base64 (IPs, names, secret ARN - no password)
 set -euo pipefail
 
 : "${ACTION:?}" "${REGION:?}" "${INSTANCE_ID:?}" "${SCRIPT_GZ64:?}" "${CONFIG_B64:?}"
+CLIENT_OS="${CLIENT_OS:-linux}"
 log() { echo "[ssm-run] $*"; }
 
 # 1. The client's SSM agent must be online (it needs the SSM endpoints of 03-ec2).
@@ -25,14 +29,22 @@ for i in $(seq 1 60); do
   sleep 10
 done
 
-# 2. Send the script. Only base64 characters go into the JSON, so no escaping is needed.
+# 2. Send the script. Only base64 characters are filled into the JSON, and the fixed
+#    commands contain no double quotes or backslashes, so no escaping is needed.
 PARAMS="$(mktemp)"
 trap 'rm -f "$PARAMS"' EXIT
-printf '{"executionTimeout":["3600"],"commands":["set -euo pipefail","echo %s | base64 -d | gunzip > /root/flexcache.py","python3 /root/flexcache.py %s %s"]}' \
-  "$SCRIPT_GZ64" "$ACTION" "$CONFIG_B64" > "$PARAMS"
+if [[ "$CLIENT_OS" == "windows" ]]; then
+  DOCUMENT=AWS-RunPowerShellScript
+  printf '{"executionTimeout":["3600"],"commands":["$ErrorActionPreference = %s","$gz = New-Object IO.Compression.GzipStream((New-Object IO.MemoryStream(,[Convert]::FromBase64String(%s))), [IO.Compression.CompressionMode]::Decompress)","$path = Join-Path $env:SystemRoot %s","Set-Content -Path $path -Value (New-Object IO.StreamReader($gz)).ReadToEnd() -Encoding UTF8","& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $path %s %s","exit $LASTEXITCODE"]}' \
+    "'Stop'" "'$SCRIPT_GZ64'" "'Temp/flexcache.ps1'" "$ACTION" "$CONFIG_B64" > "$PARAMS"
+else
+  DOCUMENT=AWS-RunShellScript
+  printf '{"executionTimeout":["3600"],"commands":["set -euo pipefail","echo %s | base64 -d | gunzip > /root/flexcache.py","python3 /root/flexcache.py %s %s"]}' \
+    "$SCRIPT_GZ64" "$ACTION" "$CONFIG_B64" > "$PARAMS"
+fi
 
 CMD_ID="$(aws ssm send-command --region "$REGION" --instance-ids "$INSTANCE_ID" \
-  --document-name AWS-RunShellScript --comment "flexcache $ACTION" \
+  --document-name "$DOCUMENT" --comment "flexcache $ACTION" \
   --parameters "file://$PARAMS" --timeout-seconds 600 \
   --query Command.CommandId --output text)"
 log "SSM command $CMD_ID sent to $INSTANCE_ID ($ACTION); waiting..."

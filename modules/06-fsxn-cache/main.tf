@@ -1,15 +1,15 @@
 # FSx for ONTAP Cache
 # The file system that hosts the FlexCache volume. This module creates NO
 # volumes: the FlexCache volume is created by stacks/04-flexcache through the
-# ONTAP API, pointing at a volume on the FSx for ONTAP Origin (modules/04-fsxn-origin).
+# ONTAP API, pointing at a volume on the FSx for ONTAP Origin (modules/05-fsxn-origin).
 #
 # The fsxadmin password is NOT generated here: stacks/02-fsxn generates one
 # password for both FSx for ONTAP and passes it in (var.fsxadmin_password).
 #
 # Resources:
-#   aws_security_group.fsxn + rules                NFS, ONTAP management, intercluster
+#   aws_security_group.fsxn + rules                NFS (or SMB), ONTAP management, intercluster
 #   aws_fsx_ontap_file_system.this                 first subnet (Single-AZ) or first two (Multi-AZ)
-#   aws_fsx_ontap_storage_virtual_machine.this     var.svm_name
+#   aws_fsx_ontap_storage_virtual_machine.this     var.svm_name, joined to AD when protocol = "smb"
 #
 # Tags: each resource gets Name = <var.name>-fsxn-... here, plus the Creator tag
 # from the provider default_tags. The file system will be <var.name>-fsxn.
@@ -19,7 +19,7 @@
 
 # --- Security group ----------------------------------------------------------
 # NFS (v3 + v4.x) plus what FlexCache and the ONTAP management API need.
-# Kept identical to modules/04-fsxn-origin so both sides accept the same traffic.
+# Kept identical to modules/05-fsxn-origin so both sides accept the same traffic.
 # Port list follows the AWS "File system access control with Amazon VPC" guide for FSx for ONTAP.
 
 locals {
@@ -47,10 +47,17 @@ locals {
     "icmp" = { protocol = "icmp", from = -1, to = -1, description = "ICMP (ping)" }
   }
 
+  # SMB only when protocol = "smb".
+  sg_smb_rules = var.protocol == "smb" ? {
+    "smb-tcp" = { protocol = "tcp", from = 445, to = 445, description = "SMB" }
+  } : {}
+
+  sg_all_rules = merge(local.sg_ingress_rules, local.sg_smb_rules)
+
   # One rule per (port rule, allowed CIDR) pair.
   sg_ingress = {
-    for pair in setproduct(keys(local.sg_ingress_rules), var.allowed_cidrs) :
-    "${pair[0]}_${pair[1]}" => merge(local.sg_ingress_rules[pair[0]], { rule = pair[0], cidr = pair[1] })
+    for pair in setproduct(keys(local.sg_all_rules), var.allowed_cidrs) :
+    "${pair[0]}_${pair[1]}" => merge(local.sg_all_rules[pair[0]], { rule = pair[0], cidr = pair[1] })
   }
 }
 
@@ -117,7 +124,25 @@ resource "aws_fsx_ontap_file_system" "this" {
 resource "aws_fsx_ontap_storage_virtual_machine" "this" {
   file_system_id             = aws_fsx_ontap_file_system.this.id
   name                       = var.svm_name
-  root_volume_security_style = "UNIX" # NFS
+  root_volume_security_style = var.protocol == "smb" ? "NTFS" : "UNIX"
+
+  # protocol = "smb": join the AWS Managed AD (stacks/01-landing-zone), which also
+  # creates the SMB server of this SVM. Its Admin account does the join.
+  dynamic "active_directory_configuration" {
+    for_each = var.active_directory == null ? [] : [var.active_directory]
+    content {
+      netbios_name = active_directory_configuration.value.netbios_name
+
+      self_managed_active_directory_configuration {
+        domain_name                            = active_directory_configuration.value.domain_name
+        dns_ips                                = active_directory_configuration.value.dns_ips
+        username                               = active_directory_configuration.value.username
+        password                               = var.ad_password
+        organizational_unit_distinguished_name = active_directory_configuration.value.ou
+        file_system_administrators_group       = active_directory_configuration.value.admins_group
+      }
+    }
+  }
 
   tags = { Name = "${var.name}-${var.svm_name}" }
 }

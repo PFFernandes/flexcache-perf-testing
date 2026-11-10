@@ -35,3 +35,26 @@ output "peering_connection_id" {
 output "cross_region" {
   value = var.origin_region != var.cache_region
 }
+
+output "protocol" {
+  value = var.protocol
+}
+
+output "directory" {
+  description = "AWS Managed Microsoft AD. null unless protocol = \"smb\"."
+  value = length(module.directory) == 0 ? null : {
+    region           = var.origin_region
+    directory_id     = module.directory[0].directory_id
+    domain_name      = module.directory[0].domain_name
+    short_name       = module.directory[0].short_name
+    dns_ips          = module.directory[0].dns_ips
+    computers_ou     = module.directory[0].computers_ou
+    fsx_admins_group = module.directory[0].fsx_admins_group
+    admin_secret = {
+      name    = aws_secretsmanager_secret.ad_admin[0].name
+      arn     = aws_secretsmanager_secret.ad_admin[0].arn
+      region  = var.origin_region
+      regions = distinct(concat([var.origin_region], [for r in aws_secretsmanager_secret.ad_admin[0].replica : r.region]))
+    }
+  }
+}

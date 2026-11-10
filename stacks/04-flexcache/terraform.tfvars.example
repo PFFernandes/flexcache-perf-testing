@@ -6,5 +6,12 @@ flexcache_junction_path = "/vol_cache"
 cache_aggregates        = ["aggr1"]
 
 # The configuration runs on the origin EC2 client (stacks/03-ec2, needs enable_ssm = true).
-# It reads the fsxadmin password through a Secrets Manager endpoint created here.
+# It reads the fsxadmin password through a Secrets Manager endpoint created here
+# (with protocol = "smb" the Windows client already has one, so none is added).
 create_secrets_endpoint = true
+
+# protocol = "smb" (common.tfvars) only: SMB shares created next to the FlexCache.
+share_names = {
+  origin = "Origin" # on the origin SVM -> origin volume, mapped on the origin client
+  cache  = "Cache"  # on the cache SVM  -> FlexCache,     mapped on the cache client
+}

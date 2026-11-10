@@ -30,3 +30,8 @@ output "public_route_table_ids" {
 output "nat_public_ip" {
   value = try(aws_eip.nat[0].public_ip, null)
 }
+
+output "directory_subnet_ids" {
+  description = "Two subnets in different AZs for AWS Managed Microsoft AD: the first private subnet plus the directory subnet, or the first two private subnets."
+  value       = length(aws_subnet.directory) > 0 ? [aws_subnet.private[0].id, aws_subnet.directory[0].id] : slice(aws_subnet.private[*].id, 0, min(2, length(aws_subnet.private)))
+}

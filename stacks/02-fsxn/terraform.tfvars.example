@@ -29,3 +29,9 @@ origin_volume = {
   storage_efficiency_enabled = true
   # constituents_per_aggregate = 4   # fewer constituents = smaller minimum size (4 x 100 GiB)
 }
+
+# protocol = "smb" (common.tfvars) only: SMB server names of the SVMs in the domain.
+svm_netbios_names = {
+  origin = "FSXN-ORIGIN"
+  cache  = "FSXN-CACHE"
+}

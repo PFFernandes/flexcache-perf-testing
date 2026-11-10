@@ -1,7 +1,22 @@
-# modules/06-ec2-client — Linux test client
+# modules/07-ec2-client — test client (Linux or Windows)
 
-One Amazon Linux 2023 instance in the **same private subnet as the FSx for ONTAP** of its side. Called
-by `stacks/03-ec2` once for the origin and once for the cache (each switchable).
+One instance in the **same private subnet as the FSx for ONTAP** of its side. Called by
+`stacks/03-ec2` once for the origin and once for the cache (each switchable). `os = "linux"`
+(protocol NFS, the default) is Amazon Linux 2023; `os = "windows"` (protocol SMB) is Windows Server 2022.
+
+**Windows** (`user_data.ps1.tftpl`): a scheduled task `fsxn-map` runs every minute as SYSTEM. It reads
+the AD Admin secret (`ad_secret`) through a Secrets Manager endpoint in the VPC
+(`enable_secrets_endpoint`), sets the local `Administrator` password to the same value once, and maps
+each entry of `smb_mappings` (`share => { drive, server }`) for every user with `New-SmbGlobalMapping`,
+retrying until the share exists. The computer is renamed to `hostname` and restarted. With
+`domain_join` (`{ domain_name, dns_ips, ou }`) an NRPT rule sends the domain's DNS queries to the
+domain controllers, and the task joins the domain into `ou` after the rename, then restarts once
+more before mapping. A mapping's optional `fallback` (the SVM IP) is used while `server` (the SVM's
+DNS name) doesn't resolve. Log:
+`C:\fsxn\fsxn-map.log`. The Instance Connect Endpoint opens RDP (3389) instead of SSH, and the
+`connect_eice` output is the `open-tunnel` command.
+
+The rest of this page describes the Linux client.
 
 **At boot** (user data) it adds every entry of `nfs_mounts` to `/etc/fstab` at `/mnt/fsxn/<name>` with
 `_netdev,nofail`, and a systemd timer (`fsxn-mount.timer`) runs `mount -a -t nfs` every minute. So a
@@ -31,14 +46,19 @@ shorter `instance_name` (`pedro-origin-client`, root volume `pedro-origin-client
 | Input | Default |
 |---|---|
 | `name`, `vpc_id`, `subnet_id` | required |
-| `instance_type` | `t3.small` |
-| `architecture` | `x86_64` (`arm64` for Graviton) |
-| `ami_id` | latest AL2023 |
-| `root_volume_gib` | `8` |
+| `os` | `linux` (`windows` for SMB) |
+| `instance_type` | `t3.small` (Linux), `t3.medium` (Windows) |
+| `architecture` | `x86_64` (`arm64` for Graviton, Linux only) |
+| `ami_id` | latest AL2023 or Windows Server 2022 |
+| `root_volume_gib` | `8` (Linux), `50` (Windows) |
 | `enable_eice` / `enable_ssm` | `true` / `true` |
 | `nfs_mounts` | `{}` – `name => { server, export, options }`; options default `vers=3,nconnect=8,hard,timeo=600,retrans=2,rsize=1048576,wsize=1048576` |
+| `smb_mappings` | `{}` – Windows: `share => { drive, server, fallback }` |
+| `domain_join` | `null` – Windows: `{ domain_name, dns_ips, ou }` to join the Managed AD |
+| `ad_secret` | `null` – Windows: `{ name }` of the AD Admin secret (required) |
+| `enable_secrets_endpoint` | `false` (stack 03 sets `true` for Windows) |
 
 The **origin** client is also where `stacks/04-flexcache` runs the FlexCache configuration (SSM Run
 Command), so keep `enable_ssm = true` for it.
 
-**Outputs:** `instance_id`, `private_ip`, `eice_id`, `mounts`, `connect_eice`, `connect_ssm`, `role_name`, `ssm_enabled`.
+**Outputs:** `instance_id`, `private_ip`, `os`, `eice_id`, `mounts` (Linux mount points or Windows drives), `domain`, `connect_eice`, `connect_ssm`, `role_name`, `ssm_enabled`, `secrets_endpoint`.

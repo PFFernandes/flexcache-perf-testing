@@ -1,13 +1,15 @@
 # FlexCache performance testing on FSx for NetApp ONTAP
 
 Terraform automation that builds an **FSx for ONTAP Origin** and an **FSx for ONTAP Cache**, adds a
-Linux test client on each side, and connects the two file systems with **FlexCache**.
+test client on each side, and connects the two file systems with **FlexCache**.
 
 - **Layers you deploy one at a time:** four stacks, each with its own state.
 - **Origin, Cache or both:** two switches in `common.tfvars`.
+- **NFS or SMB:** `protocol` in `common.tfvars`. NFS (default) uses Linux clients; SMB adds an AWS
+  Managed Microsoft AD, Windows clients and the shares `Origin` and `Cache`.
 - **Runs from your Mac:** the Terraform state stays there. There is no bastion host and no VPN; the
   VPCs have no internet access, NAT gateway or public IPs.
-- **FlexCache is configured from the origin Linux client:** Terraform sends it a script with SSM
+- **FlexCache is configured from the origin client:** Terraform sends it a script with SSM
   Run Command, and the client creates the cluster peer, SVM peer and FlexCache volume through the
   ONTAP REST API.
 
@@ -44,12 +46,14 @@ Linux test client on each side, and connects the two file systems with **FlexCac
 |---|---|---|
 | `01-landing-zone` | Network Origin, Network Cache, VPC peering | ✅ ready |
 | `02-fsxn` | FSx for ONTAP Origin and Cache, shared fsxadmin secret | ✅ ready |
-| `03-ec2` | Linux test client on the Origin and/or Cache | ✅ ready |
-| `04-flexcache` | Cluster peer, SVM peer, FlexCache volume (run on the origin client) | ✅ ready |
+| `03-ec2` | Test client on the Origin and/or Cache (Linux for NFS, Windows for SMB) | ✅ ready |
+| `04-flexcache` | Cluster peer, SVM peer, FlexCache volume, SMB shares (run on the origin client) | ✅ ready |
+| SMB option | Managed AD (01), domain-joined SVMs (02), Windows clients (03), shares (04) | 🧪 not yet run on AWS |
 
-Nothing has been applied to AWS from this repository yet. Every stack passes `terraform validate`
-and offline tests with a mocked AWS provider; the FlexCache script was tested against a simulated
-ONTAP REST API (create, re-run, delete, recovery from a half-made peer).
+The NFS lab has been deployed on AWS. Every stack passes `terraform validate` and offline tests with
+a mocked AWS provider, for both protocols; the Linux FlexCache script was also tested against a
+simulated ONTAP REST API. The SMB path has not run on AWS yet, and its PowerShell scripts (Windows
+FlexCache configuration and share mapping) have not been executed anywhere.
 
 ## Run the whole lab, step by step
 
@@ -91,6 +95,7 @@ keeps a `.bak`). Then edit at least `common.tfvars`:
 | `project` | `"flexcache-perf"` |
 | `origin_region` / `cache_region` | `"eu-west-1"` |
 | `deploy_origin` / `deploy_cache` | `true` / `true` (FlexCache needs both) |
+| `protocol` | `"nfs"` (default) or `"smb"`, see [NFS or SMB](#nfs-or-smb) |
 | `origin_azs` / `cache_azs` | `["a"]` (= eu-west-1a) |
 
 Sizes and options of each stack are in its own `terraform.tfvars` (see [Settings](#settings)).
@@ -105,10 +110,10 @@ or apply first prints the settings files it loaded, so check the regions there.
 
 | # | Commands | Creates | Time |
 |---|---|---|---|
-| 1 | `./tf.sh 01-landing-zone init`<br>`./tf.sh 01-landing-zone plan`<br>`./tf.sh 01-landing-zone apply-plan` | Origin and Cache VPCs, subnets, S3 endpoint, peering | ~2 min |
+| 1 | `./tf.sh 01-landing-zone init`<br>`./tf.sh 01-landing-zone plan`<br>`./tf.sh 01-landing-zone apply-plan` | Origin and Cache VPCs, subnets, S3 endpoint, peering; SMB: Managed AD | ~2 min; SMB: +20-45 min |
 | 2 | `./tf.sh 02-fsxn init`<br>`./tf.sh 02-fsxn plan`<br>`./tf.sh 02-fsxn apply-plan` | FSx for ONTAP Origin + Cache, SVMs, `vol_origin`, fsxadmin secret | 20-40 min, billed hourly |
-| 3 | `./tf.sh 03-ec2 init`<br>`./tf.sh 03-ec2 plan`<br>`./tf.sh 03-ec2 apply-plan` | origin and cache EC2 clients, Instance Connect + SSM endpoints | ~5 min |
-| 4 | `./tf.sh 04-flexcache init`<br>`./tf.sh 04-flexcache plan`<br>`./tf.sh 04-flexcache apply-plan` | Secrets Manager endpoint, then on the origin client: cluster peer, SVM peer, `vol_cache` | ~5-10 min |
+| 3 | `./tf.sh 03-ec2 init`<br>`./tf.sh 03-ec2 plan`<br>`./tf.sh 03-ec2 apply-plan` | origin and cache EC2 clients (Windows for SMB), Instance Connect + SSM endpoints | ~5 min; Windows ~10 min |
+| 4 | `./tf.sh 04-flexcache init`<br>`./tf.sh 04-flexcache plan`<br>`./tf.sh 04-flexcache apply-plan` | Secrets Manager endpoint, then on the origin client: cluster peer, SVM peer, `vol_cache`; SMB: shares `Origin` and `Cache` | ~5-10 min |
 
 During step 4 the apply prints the log of the origin client, e.g.
 `[flexcache] creating cluster peer ...`, `SVM peer state: peered`, `FlexCache vol_cache created`.
@@ -135,6 +140,19 @@ df -h /mnt/fsxn/vol_cache                       # FSx for ONTAP Cache, up to a m
 ls -l /mnt/fsxn/vol_cache                       # shows "hello", served through the cache
 ```
 
+With `protocol = "smb"` the clients are Windows. Open an RDP tunnel through the Instance Connect
+Endpoint (the exact command is `connect_eice` in `./tf.sh 03-ec2 output`), then connect your RDP
+client to `localhost:13389` as `FLEXCACHE\Admin` (or the local `Administrator`), with the AD Admin
+password. The clients join the domain a few minutes after boot (one extra restart):
+
+```bash
+aws ec2-instance-connect open-tunnel --instance-id <id> --remote-port 3389 --local-port 13389
+aws secretsmanager get-secret-value --secret-id <creator>-<project>/ad-admin --query SecretString --output text
+```
+
+The origin client shows the `Origin` share as `O:`, the cache client the `Cache` share as `X:` (up
+to a minute after step 4). The mapping log is `C:\fsxn\fsxn-map.log`.
+
 ### 6. Tear everything down
 
 When you're done (FSx for ONTAP is billed every hour), destroy in reverse order. See
@@ -148,10 +166,11 @@ When you're done (FSx for ONTAP is billed every hour), destroy in reverse order.
 │   ├── 01-network-origin/     origin VPC, private subnets, S3 endpoint, optional NAT
 │   ├── 02-network-cache/      cache VPC, same as 01
 │   ├── 03-vpc-peering/        peering + routes, same- or cross-region
-│   ├── 04-fsxn-origin/        FSx for ONTAP Origin: file system, SVM, vol_origin, security group
-│   ├── 05-fsxn-cache/         FSx for ONTAP Cache: file system, SVM, security group
-│   ├── 06-ec2-client/         Linux client: NFS mounts, EC2 Instance Connect + SSM endpoints
-│   └── 07-ontap-flexcache/    FlexCache setup run on the origin client (SSM + ONTAP REST script)
+│   ├── 04-managed-ad/         AWS Managed Microsoft AD (protocol = "smb" only)
+│   ├── 05-fsxn-origin/        FSx for ONTAP Origin: file system, SVM, vol_origin, security group
+│   ├── 06-fsxn-cache/         FSx for ONTAP Cache: file system, SVM, security group
+│   ├── 07-ec2-client/         Linux (NFS mounts) or Windows (SMB drives) client, Instance Connect + SSM endpoints
+│   └── 08-ontap-flexcache/    FlexCache setup run on the origin client (SSM + ONTAP REST script, shares for SMB)
 ├── stacks/                    what you deploy, one local state file each
 │   ├── 01-landing-zone/
 │   ├── 02-fsxn/
@@ -177,30 +196,31 @@ numbers, so deploy from `01` upwards and destroy from the highest number down.
 ```
 stacks:   01-landing-zone ──► 02-fsxn ──► 03-ec2 ──► 04-flexcache
 
-modules:  01-network-origin ──┐                ┌──► 04-fsxn-origin ──┐
-                              ├──► 03-peering ─┤                     ├──► 06-ec2-client ──► 07-ontap-flexcache
-          02-network-cache  ──┘                └──► 05-fsxn-cache  ──┘
+modules:  01-network-origin ──┐                                 ┌──► 05-fsxn-origin ──┐
+                              ├──► 03-peering ──► 04-managed-ad ─┤                     ├──► 07-ec2-client ──► 08-ontap-flexcache
+          02-network-cache  ──┘                    (smb only)    └──► 06-fsxn-cache  ──┘
 ```
 
 | # | Stack | Reads from | Calls modules |
 |---|---|---|---|
-| 01 | `01-landing-zone` | – | `01-network-origin`, `02-network-cache`, `03-vpc-peering` |
-| 02 | `02-fsxn` | 01: VPCs, subnets, CIDRs | `04-fsxn-origin`, `05-fsxn-cache` |
-| 03 | `03-ec2` | 01: subnets · 02: SVM NFS IPs, junction paths | `06-ec2-client` |
-| 04 | `04-flexcache` | 01: origin VPC · 02: management/intercluster IPs, SVMs, fsxadmin secret · 03: origin client | `07-ontap-flexcache` |
+| 01 | `01-landing-zone` | – | `01-network-origin`, `02-network-cache`, `03-vpc-peering`, `04-managed-ad` (SMB) |
+| 02 | `02-fsxn` | 01: VPCs, subnets, CIDRs, Managed AD (SMB) | `05-fsxn-origin`, `06-fsxn-cache` |
+| 03 | `03-ec2` | 01: subnets, AD Admin secret (SMB) · 02: SVM NFS IPs / SMB names, junction paths | `07-ec2-client` |
+| 04 | `04-flexcache` | 01: origin VPC · 02: management/intercluster IPs, SVMs, fsxadmin secret · 03: origin client | `08-ontap-flexcache` |
 
 | # | Module | Side | Needs |
 |---|---|---|---|
 | 01 | `01-network-origin` | Origin | – |
 | 02 | `02-network-cache` | Cache | – (its CIDR must not overlap 01) |
 | 03 | `03-vpc-peering` | both | 01 + 02: VPC IDs, route tables, CIDRs |
-| 04 | `04-fsxn-origin` | Origin | 01: VPC and subnet · 03: reachability |
-| 05 | `05-fsxn-cache` | Cache | 02: VPC and subnet · 03 · the Origin it caches (04) |
-| 06 | `06-ec2-client` | both | 01/02: the FSx for ONTAP subnet · 04/05: SVM NFS IP |
-| 07 | `07-ontap-flexcache` | both | 04 + 05: management/intercluster IPs, SVMs, origin volume · 06: the origin client runs it |
+| 04 | `04-managed-ad` | Origin (SMB only) | 01: two subnets in different AZs · 03: the cache side reaches it |
+| 05 | `05-fsxn-origin` | Origin | 01: VPC and subnet · 03: reachability · 04: domain (SMB) |
+| 06 | `06-fsxn-cache` | Cache | 02: VPC and subnet · 03 · the Origin it caches (05) · 04: domain (SMB) |
+| 07 | `07-ec2-client` | both | 01/02: the FSx for ONTAP subnet · 05/06: SVM NFS IP or SMB name |
+| 08 | `08-ontap-flexcache` | both | 05 + 06: management/intercluster IPs, SVMs, origin volume · 07: the origin client runs it |
 
-The cache client's `/mnt/fsxn/vol_cache` is configured in step 3 but only mounts once step 4 has
-created the FlexCache volume (a timer on the client retries every minute).
+The cache client's `/mnt/fsxn/vol_cache` (or `X:` for SMB) is configured in step 3 but only
+appears once step 4 has created the FlexCache volume (the client retries every minute).
 
 ## How FlexCache is configured (stack 04)
 
@@ -210,8 +230,9 @@ Mac: the **origin EC2 client** does the work.
 
 1. `terraform apply` creates a **Secrets Manager endpoint** in the origin VPC and lets the origin
    client's role read the fsxadmin secret.
-2. It then runs `modules/07-ontap-flexcache/files/ssm-run.sh` on your Mac, which sends
-   `files/flexcache.py` to the origin client with **SSM Run Command** and waits for it.
+2. It then runs `modules/08-ontap-flexcache/files/ssm-run.sh` on your Mac, which sends the script
+   to the origin client with **SSM Run Command** and waits for it: `files/flexcache.py` on Linux
+   (NFS), `files/flexcache.ps1` on Windows (SMB). Both do the same steps.
 3. On the client, the script reads the fsxadmin password from Secrets Manager (it is never part of
    the SSM command) and calls the ONTAP REST API on the Origin management IP (same VPC) and the
    Cache management IP (over the peering):
@@ -220,9 +241,11 @@ Mac: the **origin EC2 client** does the work.
    - **SVM peer** `svm_cache` ⇄ `svm_origin` with the `flexcache` application, accepted on the
      Origin;
    - **FlexCache volume** `vol_cache` on `svm_cache` (500 GiB, `aggr1`), origin `vol_origin`,
-     mounted at `/vol_cache`.
-4. `terraform destroy` runs the same script with `delete`: FlexCache (unmount, offline, delete),
-   SVM peer, cluster peer.
+     mounted at `/vol_cache`;
+   - **SMB only:** share `Origin` on `svm_origin` (→ `/vol_origin`) and share `Cache` on
+     `svm_cache` (→ `/vol_cache`), names set by `share_names`.
+4. `terraform destroy` runs the same script with `delete`: SMB shares, FlexCache (unmount, offline,
+   delete), SVM peer, cluster peer.
 
 Every step checks what already exists, so re-running is safe. Changing a FlexCache setting
 (name, size, path, aggregates) deletes and recreates the FlexCache setup. The origin client needs
@@ -235,11 +258,11 @@ Module variables are never set directly: each stack fills them in. You only edit
 
 | File | Main settings |
 |---|---|
-| `common.tfvars` (every stack) | `project`, `creator`, `origin_region`, `cache_region`, `deploy_origin`, `deploy_cache`, `origin_azs`, `cache_azs` |
-| `stacks/01-landing-zone/terraform.tfvars` | VPC CIDRs, subnet CIDR overrides, `origin_nat_gateway` / `cache_nat_gateway` (default `false`) |
-| `stacks/02-fsxn/terraform.tfvars` | `origin_fsxn` / `cache_fsxn` (default SINGLE_AZ_1, 128 MB/s, 1024 GiB), `origin_volume` (default `vol_origin`, FlexGroup, 800 GiB, storage efficiency on) |
-| `stacks/03-ec2/terraform.tfvars` | `origin_ec2` / `cache_ec2`, `instance_type` (`t3.small`), `enable_eice` / `enable_ssm`, `nfs_options`, `cache_mounts_origin` |
-| `stacks/04-flexcache/terraform.tfvars` | `flexcache_name` (`vol_cache`), `flexcache_size_gib` (500), `flexcache_junction_path`, `cache_aggregates`, `create_secrets_endpoint` |
+| `common.tfvars` (every stack) | `project`, `creator`, `origin_region`, `cache_region`, `deploy_origin`, `deploy_cache`, `protocol`, `origin_azs`, `cache_azs` |
+| `stacks/01-landing-zone/terraform.tfvars` | VPC CIDRs, subnet CIDR overrides, `origin_nat_gateway` / `cache_nat_gateway` (default `false`); SMB: `ad_domain_name` (`flexcache.lab`), `ad_short_name` (`FLEXCACHE`), `ad_edition` (`Standard`), `ad_az`, `ad_subnet_cidr` |
+| `stacks/02-fsxn/terraform.tfvars` | `origin_fsxn` / `cache_fsxn` (default SINGLE_AZ_1, 128 MB/s, 1024 GiB), `origin_volume` (default `vol_origin`, FlexGroup, 800 GiB, storage efficiency on); SMB: `svm_netbios_names` (`FSXN-ORIGIN`, `FSXN-CACHE`) |
+| `stacks/03-ec2/terraform.tfvars` | `origin_ec2` / `cache_ec2`, `instance_type` (`t3.small` Linux, `t3.medium` Windows), `enable_eice` / `enable_ssm`, `nfs_options`, `cache_mounts_origin`; SMB: `domain_join` (`true`), `smb_drives` (`O`, `X`) |
+| `stacks/04-flexcache/terraform.tfvars` | `flexcache_name` (`vol_cache`), `flexcache_size_gib` (500), `flexcache_junction_path`, `cache_aggregates`, `create_secrets_endpoint`; SMB: `share_names` (`Origin`, `Cache`) |
 
 The stack files are optional; without them every value has a default. `tf.sh` passes
 `common.tfvars` to every stack and, before each plan or apply, prints the files it loads and the
@@ -272,6 +295,39 @@ deploy_cache  = true
 - Keep the switches in `common.tfvars` rather than passing `-var`, so a later plain `apply` doesn't
   switch a side back off.
 
+## NFS or SMB
+
+```hcl
+# common.tfvars
+protocol = "nfs" # default; "smb" for Windows and SMB shares
+```
+
+| What | `nfs` (default) | `smb` |
+|---|---|---|
+| Directory (`01-landing-zone`) | none | AWS Managed Microsoft AD `flexcache.lab` in the origin VPC, on the first origin subnet plus a second one in another AZ (`x.x.200.0/24`); Admin password in the secret `<creator>-<project>/ad-admin` |
+| SVMs (`02-fsxn`) | UNIX security | joined to the domain as `FSXN-ORIGIN` / `FSXN-CACHE`, NTFS security, TCP 445 open |
+| Clients (`03-ec2`) | Amazon Linux 2023, NFS mounts under `/mnt/fsxn` | Windows Server 2022, computer names `origin` / `cache`, joined to the domain |
+| FlexCache (`04-flexcache`) | `flexcache.py` | `flexcache.ps1`, plus the shares |
+| Origin client | `/mnt/fsxn/vol_origin` | share `Origin` (→ `vol_origin`) on `O:` |
+| Cache client | `/mnt/fsxn/vol_cache` | share `Cache` (→ the FlexCache `vol_cache`) on `X:` |
+
+- **Pick the protocol before the first apply.** Switching later rebuilds the SVMs, the origin volume
+  and the clients: destroy `04`, `03` and `02` first, then apply all four stacks again.
+- **SMB needs the origin side** (`deploy_origin = true`), because the directory lives in the origin
+  VPC. The cache SVM and cache client reach it over the peering; with a cross-region cache the
+  Admin secret is replicated to `cache_region`.
+- **The Windows clients join the domain** (`domain_join = true` in `03-ec2`, the default) into
+  `OU=Computers,OU=FLEXCACHE,...`. A scheduled task (`fsxn-map`) reads the Admin secret, joins after
+  the rename and restarts, then maps the shares for every user with the domain's `Admin` account.
+  The local `Administrator` gets the same password. Fine for a lab, not for production.
+- **Only the domain's names go to the domain controllers.** An NRPT rule sends `*.flexcache.lab`
+  to the AD DNS and everything else to the VPC DNS, so the VPC endpoints keep working.
+- **Shares are mapped by the SVM's name** (`\\FSXN-ORIGIN.flexcache.lab\Origin`, Kerberos), or by
+  its IP while that name doesn't resolve. With `domain_join = false` the clients stay in a
+  workgroup and map by IP (NTLM).
+- **Each Windows client gets a Secrets Manager endpoint** in its VPC, so stack 04 doesn't create a
+  second one in the origin VPC.
+
 ## Your Mac
 
 - **Tools:** `brew install hashicorp/tap/terraform awscli` (Terraform ≥ 1.10, AWS CLI v2). For SSM
@@ -284,6 +340,10 @@ deploy_cache  = true
   connects from your Mac into the VPCs except your logins through the endpoints.
 
 ## The EC2 clients
+
+With `protocol = "smb"` the clients are Windows Server 2022 instances (`t3.medium` by default) that
+map the SMB shares instead; see [NFS or SMB](#nfs-or-smb). The rest of this section is the NFS
+default.
 
 Each client is an Amazon Linux 2023 instance in the **same private subnet as its side's FSx for
 ONTAP**, with the Linux hostname `origin` or `cache`. At boot it adds the NFS mounts to `/etc/fstab`, and a systemd timer retries `mount -a` every
@@ -306,8 +366,8 @@ aws ec2-instance-connect ssh --instance-id <id> --connection-type eice   # EC2 I
 aws ssm start-session --target <id>                                      # SSM Session Manager
 ```
 
-Both endpoints are created per VPC by `06-ec2-client`. The Instance Connect Endpoint may only SSH to
-the client; the SSM interface endpoints only accept HTTPS from it. `t3.small` is enough to check the
+Both endpoints are created per VPC by `07-ec2-client`. The Instance Connect Endpoint may only SSH to
+the client (RDP for Windows); the SSM interface endpoints only accept HTTPS from it. `t3.small` is enough to check the
 mounts; use a network-optimised type such as `c6in.xlarge` for real performance numbers.
 
 ## Tags and names
@@ -322,6 +382,7 @@ Every AWS resource gets two tags: `Creator` (from `creator`, set through the pro
 | Peering | `pedro-flexcache-perf-origin-to-cache` |
 | FSx for ONTAP | `pedro-flexcache-perf-origin-fsxn`, security group `...-origin-fsxn-sg` |
 | fsxadmin secret | `pedro-flexcache-perf/fsxadmin` |
+| Managed AD (SMB) | `pedro-flexcache-perf-ad`, secret `pedro-flexcache-perf/ad-admin`, subnet `...-origin-directory-eu-west-1b` |
 | EC2 instances (shorter on purpose: `<creator>-<side>-client`) | `pedro-origin-client`, `pedro-cache-client` |
 | EC2 supporting resources | `pedro-flexcache-perf-origin-client-eice`, `...-origin-client-ssm-endpoint`, `...-cache-client-sg` |
 | FlexCache (stack 04) | `pedro-flexcache-perf-flexcache-secretsmanager-endpoint`, policy `...-flexcache-read-fsxadmin` |
@@ -341,6 +402,9 @@ generated fsxadmin password, so never commit it.
 - **One fsxadmin password** for both FSx for ONTAP: `02-fsxn` generates it and stores it in the
   Secrets Manager secret `<creator>-<project>/fsxadmin` in the origin region. To read it:
   `aws secretsmanager get-secret-value --secret-id <creator>-<project>/fsxadmin --region <origin_region>`
+- **SMB: one AD Admin password.** `01-landing-zone` generates it for the Managed AD and stores it in
+  `<creator>-<project>/ad-admin` (origin region, replicated to a different `cache_region`). It is
+  also in the stack 01 state file.
 - **Keep the state files.** Destroy the lab before you delete the clone, and back the `*.tfstate`
   files up (e.g. Time Machine). Without them Terraform no longer knows what it created.
 - Moving to S3 later is a one-file change per stack (`backend.tf`) plus `terraform init -migrate-state`.
@@ -353,7 +417,7 @@ Reverse order, highest number first. Each asks for `yes`:
 ./tf.sh 04-flexcache destroy        # runs on the origin client: FlexCache, SVM peer, cluster peer
 ./tf.sh 03-ec2 destroy              # destroy 04 first: it needs the origin client
 ./tf.sh 02-fsxn destroy             # deletes both FSx for ONTAP and the fsxadmin secret
-./tf.sh 01-landing-zone destroy
+./tf.sh 01-landing-zone destroy     # SMB: deleting the Managed AD takes 20-45 min
 ```
 
 ## Network notes
@@ -370,6 +434,8 @@ Reverse order, highest number first. Each asks for `yes`:
 - **Security groups** on both FSx for ONTAP allow, from both VPCs: NFS (TCP/UDP 111, 635, 2049,
   4045-4046, UDP 4049), ONTAP management (TCP 443, 22), intercluster (TCP 11104-11105) and ICMP.
   That is what lets the origin client reach the Cache management IP over the peering.
+- **SMB** (`protocol = "smb"`) also opens TCP 445 on both FSx for ONTAP, and the Managed AD's own
+  security group gets the AD ports (DNS, Kerberos, LDAP, SMB, RPC) from the cache VPC.
 - **Cluster peering and FlexCache** use the intercluster IPs and run over the VPC peering.
 - **Single-AZ is the default** because its management and NFS endpoints are normal VPC IPs that
   work across peering. Multi-AZ endpoints use floating IPs that don't route over peering (they
@@ -384,3 +450,10 @@ Reverse order, highest number first. Each asks for `yes`:
   the origin client needs them for stack 04).
 - **Secrets Manager endpoint** (stack 04, origin VPC): about USD 0.01/h.
 - **EC2 Instance Connect Endpoint:** free.
+- **SMB only:**
+  - **AWS Managed Microsoft AD** is billed per domain controller hour, and there are always two.
+    An older AWS estimate puts Standard Edition at about USD 0.14/h; check the
+    [pricing page](https://aws.amazon.com/directoryservice/pricing/) for your region.
+  - **Windows clients** include the Windows license in the hourly price, so they cost more than the
+    Linux ones.
+  - **Secrets Manager endpoint** per Windows client VPC: about USD 0.01/h each.

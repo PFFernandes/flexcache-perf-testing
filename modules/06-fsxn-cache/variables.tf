@@ -95,3 +95,39 @@ variable "svm_name" {
   type        = string
   default     = "svm_cache"
 }
+
+variable "protocol" {
+  description = "nfs: UNIX security, NFS ports. smb: NTFS security, port 445, SVM joined to var.active_directory."
+  type        = string
+  default     = "nfs"
+
+  validation {
+    condition     = contains(["nfs", "smb"], var.protocol)
+    error_message = "protocol must be \"nfs\" or \"smb\"."
+  }
+}
+
+variable "active_directory" {
+  description = "protocol = \"smb\" only: the AWS Managed AD to join. null = no domain join."
+  type = object({
+    netbios_name = string       # SMB server name of this SVM, up to 15 characters
+    domain_name  = string       # e.g. flexcache.lab
+    dns_ips      = list(string) # the domain controllers
+    username     = string       # Admin
+    ou           = string       # OU=Computers,OU=<short_name>,DC=...
+    admins_group = string       # AWS Delegated FSx Administrators
+  })
+  default = null
+
+  validation {
+    condition     = var.protocol == "nfs" || var.active_directory != null
+    error_message = "protocol = \"smb\" needs active_directory (the Managed AD from stacks/01-landing-zone)."
+  }
+}
+
+variable "ad_password" {
+  description = "Password of active_directory.username."
+  type        = string
+  default     = null
+  sensitive   = true
+}

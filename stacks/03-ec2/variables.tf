@@ -42,6 +42,22 @@ variable "deploy_cache" {
   }
 }
 
+variable "protocol" {
+  description = "File protocol of the lab: nfs (default, Linux clients) or smb (AWS Managed AD, Windows clients, shares Origin and Cache)."
+  type        = string
+  default     = "nfs"
+
+  validation {
+    condition     = contains(["nfs", "smb"], var.protocol)
+    error_message = "protocol must be \"nfs\" or \"smb\"."
+  }
+
+  validation {
+    condition     = var.protocol == "nfs" || var.deploy_origin
+    error_message = "protocol = \"smb\" needs deploy_origin = true: the Managed AD lives in the origin VPC."
+  }
+}
+
 variable "origin_azs" {
   description = "AZ letters for the origin side, appended to origin_region (\"a\" = <region>a). One private subnet per AZ. Single-AZ FSxN uses the first, Multi-AZ needs two, e.g. [\"a\", \"b\"]."
   type        = list(string)
@@ -81,13 +97,13 @@ variable "cache_ec2" {
 # --- instance --------------------------------------------------------------------
 
 variable "instance_type" {
-  description = "Same type for both clients. t3.small is enough to check mounts; use a network-optimised type (e.g. c6in.xlarge) for real numbers."
+  description = "Same type for both clients. null = t3.small (Linux) or t3.medium (Windows), enough to check mounts; use a network-optimised type (e.g. c6in.xlarge) for real numbers."
   type        = string
-  default     = "t3.small"
+  default     = null
 }
 
 variable "architecture" {
-  description = "x86_64 for t3/m7i/c6in, arm64 for Graviton (t4g, c7g ...)."
+  description = "x86_64 for t3/m7i/c6in, arm64 for Graviton (t4g, c7g ...). Windows (protocol = \"smb\") is x86_64 only."
   type        = string
   default     = "x86_64"
 }
@@ -124,4 +140,21 @@ variable "cache_mounts_origin" {
   description = "Off by default: the cache client mounts only the FSx for ONTAP Cache. true = it also mounts the origin volume over the peering (/mnt/fsxn/vol_origin) as a no-cache baseline."
   type        = bool
   default     = false
+}
+
+# --- SMB (protocol = "smb") -------------------------------------------------------------
+
+variable "smb_drives" {
+  description = "Drive letters of the SMB shares on the Windows clients: Origin share and Cache share."
+  type = object({
+    origin = optional(string, "O")
+    cache  = optional(string, "X")
+  })
+  default = {}
+}
+
+variable "domain_join" {
+  description = "protocol = \"smb\": join the Windows clients to the Managed AD (RDP as <short_name>\\Admin, Kerberos, shares by name). false = workgroup machines that map the shares by IP with the Admin credentials."
+  type        = bool
+  default     = true
 }

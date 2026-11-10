@@ -1,4 +1,5 @@
-# Layer 4 - FlexCache: cluster peering + SVM peering + FlexCache volume.
+# Layer 4 - FlexCache: cluster peering + SVM peering + FlexCache volume, and with
+# protocol = "smb" the SMB shares Origin (origin SVM) and Cache (cache SVM).
 #
 # Configured FROM THE ORIGIN EC2 CLIENT (stacks/03-ec2): Terraform sends a script
 # to it with SSM Run Command, and the client calls the ONTAP REST API on both
@@ -57,6 +58,10 @@ resource "terraform_data" "prerequisites" {
       error_message = "The FlexCache configuration runs on the origin EC2 client, which is not in the 03-ec2 state. Apply 03-ec2 (origin_ec2 = true) first."
     }
     precondition {
+      condition     = var.protocol == "nfs" || try(local.client.os, "linux") == "windows"
+      error_message = "protocol = \"smb\" but the origin client in the 03-ec2 state is not Windows. Re-apply 02-fsxn and 03-ec2 with protocol = \"smb\" first."
+    }
+    precondition {
       condition     = try(local.client.ssm_enabled, false)
       error_message = "The origin EC2 client needs SSM (enable_ssm = true in stacks/03-ec2): the configuration is sent to it with SSM Run Command."
     }
@@ -65,7 +70,7 @@ resource "terraform_data" "prerequisites" {
 
 module "flexcache" {
   count  = local.ready && try(local.client.ssm_enabled, false) ? 1 : 0
-  source = "../../modules/07-ontap-flexcache"
+  source = "../../modules/08-ontap-flexcache"
 
   providers = { aws = aws.origin }
 
@@ -73,12 +78,14 @@ module "flexcache" {
 
   client_instance_id = local.client.instance_id
   client_region      = local.client.region
+  client_os          = try(local.client.os, "linux")
   client_role_name   = local.client.role_name
   vpc_id             = local.net.vpc_id
   vpc_cidr           = local.net.vpc_cidr
   subnet_id          = local.net.private_subnet_ids[0]
 
-  create_secrets_endpoint = var.create_secrets_endpoint
+  # A Windows origin client already has a Secrets Manager endpoint (stacks/03-ec2).
+  create_secrets_endpoint = var.create_secrets_endpoint && !try(local.client.secrets_endpoint, false)
 
   fsxadmin_secret_arn    = local.secret.arn
   fsxadmin_secret_region = local.secret.region
@@ -88,6 +95,7 @@ module "flexcache" {
     intercluster_ips = local.origin.intercluster_ips
     svm_name         = local.origin.svm_name
     volume_name      = local.origin.volume_name
+    junction_path    = local.origin.junction_path
   }
   cache = {
     management_ip    = local.cache.management_ip
@@ -99,4 +107,7 @@ module "flexcache" {
   flexcache_size_gib      = var.flexcache_size_gib
   flexcache_junction_path = var.flexcache_junction_path
   aggregates              = var.cache_aggregates
+
+  protocol    = var.protocol
+  share_names = var.share_names
 }

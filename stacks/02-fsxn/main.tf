@@ -1,6 +1,8 @@
 # Layer 2 - FSx for ONTAP.
-#   FSx for ONTAP Origin (modules/04-fsxn-origin): when deploy_origin = true.
-#   FSx for ONTAP Cache  (modules/05-fsxn-cache):  when deploy_cache  = true.
+#   FSx for ONTAP Origin (modules/05-fsxn-origin): when deploy_origin = true.
+#   FSx for ONTAP Cache  (modules/06-fsxn-cache):  when deploy_cache  = true.
+# protocol = "smb" (common.tfvars): both SVMs join the Managed AD of 01-landing-zone,
+# security style NTFS and port 445 open. Default nfs: UNIX security, NFS only.
 # Same switches as 01-landing-zone (common.tfvars); that side's network must exist.
 # Reads VPC/subnet IDs from the 01-landing-zone state.
 
@@ -23,6 +25,33 @@ locals {
     try(local.lz.origin.vpc_cidr, null),
     try(local.lz.cache.vpc_cidr, null),
   ])
+
+  # protocol = "smb": both SVMs join the Managed AD from 01-landing-zone.
+  smb       = var.protocol == "smb"
+  directory = try(local.lz.directory, null)
+  ad_ready  = local.smb && local.directory != null
+  active_directory = {
+    for side, netbios in var.svm_netbios_names : side => local.ad_ready ? {
+      netbios_name = netbios
+      domain_name  = local.directory.domain_name
+      dns_ips      = local.directory.dns_ips
+      username     = "Admin"
+      ou           = local.directory.computers_ou
+      admins_group = local.directory.fsx_admins_group
+    } : null
+  }
+}
+
+# The Admin password of the Managed AD, from its secret (origin region).
+data "aws_secretsmanager_secret_version" "ad_admin" {
+  count    = local.ad_ready ? 1 : 0
+  provider = aws.origin
+
+  secret_id = local.directory.admin_secret.arn
+}
+
+locals {
+  ad_password = local.ad_ready ? jsondecode(data.aws_secretsmanager_secret_version.ad_admin[0].secret_string).password : null
 }
 
 # Clear error if a side is switched on here but its network is not in the
@@ -37,15 +66,19 @@ resource "terraform_data" "landing_zone_check" {
       condition     = !var.deploy_cache || local.has_cache_network
       error_message = "deploy_cache = true but there is no Network Cache in the 01-landing-zone state. Run ./tf.sh 01-landing-zone apply first."
     }
+    precondition {
+      condition     = !local.smb || local.directory != null
+      error_message = "protocol = \"smb\" but there is no Managed AD in the 01-landing-zone state. Run ./tf.sh 01-landing-zone apply with the same common.tfvars first."
+    }
   }
 }
 
 # --- FSx for ONTAP Origin ----------------------------------------------------
 module "fsxn_origin" {
   # Skipped when the origin network is missing; terraform_data.landing_zone_check then explains why.
-  count = var.deploy_origin && local.has_origin_network ? 1 : 0
+  count = var.deploy_origin && local.has_origin_network && (!local.smb || local.ad_ready) ? 1 : 0
 
-  source    = "../../modules/04-fsxn-origin"
+  source    = "../../modules/05-fsxn-origin"
   providers = { aws = aws.origin }
 
   name            = "${local.name_prefix}-origin"
@@ -61,6 +94,10 @@ module "fsxn_origin" {
 
   fsxadmin_password = random_password.fsxadmin.result # same password as the Cache (credentials.tf)
 
+  protocol         = var.protocol
+  active_directory = local.active_directory["origin"]
+  ad_password      = local.ad_password
+
   svm_name = "svm_origin"
   volumes = {
     (var.origin_volume.name) = {
@@ -69,6 +106,7 @@ module "fsxn_origin" {
       volume_style               = var.origin_volume.volume_style
       constituents_per_aggregate = var.origin_volume.constituents_per_aggregate
       storage_efficiency_enabled = var.origin_volume.storage_efficiency_enabled
+      security_style             = local.smb ? "NTFS" : "UNIX"
     }
   }
 }
@@ -76,9 +114,9 @@ module "fsxn_origin" {
 # --- FSx for ONTAP Cache -----------------------------------------------------
 module "fsxn_cache" {
   # Skipped when the cache network is missing; terraform_data.landing_zone_check then explains why.
-  count = var.deploy_cache && local.has_cache_network ? 1 : 0
+  count = var.deploy_cache && local.has_cache_network && (!local.smb || local.ad_ready) ? 1 : 0
 
-  source    = "../../modules/05-fsxn-cache"
+  source    = "../../modules/06-fsxn-cache"
   providers = { aws = aws.cache }
 
   name            = "${local.name_prefix}-cache"
@@ -93,6 +131,10 @@ module "fsxn_cache" {
   ha_pairs                        = var.cache_fsxn.ha_pairs
 
   fsxadmin_password = random_password.fsxadmin.result # same password as the Origin (credentials.tf)
+
+  protocol         = var.protocol
+  active_directory = local.active_directory["cache"]
+  ad_password      = local.ad_password
 
   svm_name = "svm_cache"
   # No volumes: the FlexCache volume is created by stacks/04-flexcache via the ONTAP API.

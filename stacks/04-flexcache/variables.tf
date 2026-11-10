@@ -42,6 +42,22 @@ variable "deploy_cache" {
   }
 }
 
+variable "protocol" {
+  description = "File protocol of the lab: nfs (default, Linux clients) or smb (AWS Managed AD, Windows clients, shares Origin and Cache)."
+  type        = string
+  default     = "nfs"
+
+  validation {
+    condition     = contains(["nfs", "smb"], var.protocol)
+    error_message = "protocol must be \"nfs\" or \"smb\"."
+  }
+
+  validation {
+    condition     = var.protocol == "nfs" || var.deploy_origin
+    error_message = "protocol = \"smb\" needs deploy_origin = true: the Managed AD lives in the origin VPC."
+  }
+}
+
 variable "origin_azs" {
   description = "AZ letters for the origin side, appended to origin_region (\"a\" = <region>a). One private subnet per AZ. Single-AZ FSxN uses the first, Multi-AZ needs two, e.g. [\"a\", \"b\"]."
   type        = list(string)
@@ -93,4 +109,13 @@ variable "flexcache_junction_path" {
 variable "cache_aggregates" {
   type    = list(string)
   default = ["aggr1"]
+}
+
+variable "share_names" {
+  description = "protocol = \"smb\" only: SMB share names. origin = on the origin SVM (origin volume), cache = on the cache SVM (FlexCache)."
+  type = object({
+    origin = optional(string, "Origin")
+    cache  = optional(string, "Cache")
+  })
+  default = {}
 }

@@ -1,4 +1,5 @@
-# ONTAP FlexCache configuration, executed on the ORIGIN EC2 client.
+# ONTAP FlexCache configuration, executed on the ORIGIN EC2 client
+# (files/flexcache.py on Linux for NFS, files/flexcache.ps1 on Windows for SMB).
 #
 # The AWS FSx API has no cluster peering or FlexCache calls, so they go through
 # the ONTAP REST API on the management IPs, which are private. Instead of
@@ -7,6 +8,7 @@
 #   1. cluster peer   Origin <-> Cache (intercluster LIFs, TCP 11104/11105)
 #   2. SVM peer       svm_cache <-> svm_origin, application flexcache
 #   3. FlexCache      vol_cache on svm_cache -> vol_origin on svm_origin
+#   4. SMB shares     protocol = "smb" only: Origin -> vol_origin, Cache -> vol_cache
 # `terraform destroy` sends the same script with "delete" (reverse order).
 #
 # The client reads the fsxadmin password itself from Secrets Manager, through
@@ -25,7 +27,7 @@
 data "aws_region" "current" {}
 
 locals {
-  config = {
+  config = merge({
     secret_arn    = var.fsxadmin_secret_arn
     secret_region = var.fsxadmin_secret_region
     origin = {
@@ -45,7 +47,17 @@ locals {
       junction_path = var.flexcache_junction_path
       aggregates    = var.aggregates
     }
-  }
+    },
+    # Only added for SMB, so an existing NFS setup keeps the same hash (no rebuild).
+    [for smb in(var.protocol == "smb" ? [true] : []) : {
+      protocol = "smb"
+      shares = {
+        origin = { name = var.share_names.origin, path = var.origin.junction_path }
+        cache  = { name = var.share_names.cache, path = var.flexcache_junction_path }
+      }
+  }]...)
+
+  script_file = var.client_os == "windows" ? "flexcache.ps1" : "flexcache.py"
 }
 
 # --- Secrets Manager endpoint (origin VPC has no internet) -------------------------
@@ -113,7 +125,8 @@ resource "terraform_data" "flexcache" {
     runner      = "${path.module}/files/ssm-run.sh"
     region      = var.client_region
     instance_id = var.client_instance_id
-    script_gz64 = base64gzip(file("${path.module}/files/flexcache.py"))
+    client_os   = var.client_os
+    script_gz64 = base64gzip(file("${path.module}/files/${local.script_file}"))
     config_b64  = base64encode(jsonencode(local.config))
   }
 
@@ -121,6 +134,7 @@ resource "terraform_data" "flexcache" {
     command = "bash '${self.input.runner}'"
     environment = {
       ACTION      = "create"
+      CLIENT_OS   = try(self.input.client_os, "linux")
       REGION      = self.input.region
       INSTANCE_ID = self.input.instance_id
       SCRIPT_GZ64 = self.input.script_gz64
@@ -133,6 +147,7 @@ resource "terraform_data" "flexcache" {
     command = "bash '${self.input.runner}'"
     environment = {
       ACTION      = "delete"
+      CLIENT_OS   = try(self.input.client_os, "linux")
       REGION      = self.input.region
       INSTANCE_ID = self.input.instance_id
       SCRIPT_GZ64 = self.input.script_gz64

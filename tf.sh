@@ -48,7 +48,7 @@ case "$CMD" in
     [[ -f "$ROOT/common.tfvars" ]] || { echo "Missing common.tfvars - copy common.tfvars.example and edit it."; exit 1; }
     echo "Settings loaded for $STACK:"
     echo "  $ROOT/common.tfvars"
-    grep -E '^[[:space:]]*(origin_region|cache_region)[[:space:]]*=' "$ROOT/common.tfvars" | sed 's/^/      /'
+    grep -E '^[[:space:]]*(origin_region|cache_region|protocol)[[:space:]]*=' "$ROOT/common.tfvars" | sed 's/^/      /'
     if [[ -f "$DIR/terraform.tfvars" ]]; then
       echo "  $DIR/terraform.tfvars"
       grep -E '^[[:space:]]*[a-z_]+[[:space:]]*=' "$DIR/terraform.tfvars" | sed 's/^/      /'

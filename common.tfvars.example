@@ -14,6 +14,13 @@ cache_region  = "eu-west-1"
 deploy_origin = true
 deploy_cache  = true
 
+# File protocol of the whole lab:
+#   "nfs" (default): Linux clients mount NFS.
+#   "smb": AWS Managed Microsoft AD in the origin VPC (01-landing-zone), SVMs joined to it
+#          (02-fsxn), Windows clients (03-ec2) and the shares Origin and Cache (04-flexcache).
+# Pick it before the first apply: switching later rebuilds the SVMs, volumes and clients.
+protocol = "nfs"
+
 # Availability Zones, as letters appended to the region ("a" = eu-west-1a).
 # One private subnet is created per AZ. Single-AZ FSx for ONTAP uses the first;
 # Multi-AZ needs two, e.g. ["a", "b"].

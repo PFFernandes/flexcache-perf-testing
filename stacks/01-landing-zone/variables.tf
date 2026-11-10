@@ -39,6 +39,22 @@ variable "deploy_cache" {
   }
 }
 
+variable "protocol" {
+  description = "File protocol of the lab: nfs (default, Linux clients) or smb (AWS Managed AD, Windows clients, shares Origin and Cache)."
+  type        = string
+  default     = "nfs"
+
+  validation {
+    condition     = contains(["nfs", "smb"], var.protocol)
+    error_message = "protocol must be \"nfs\" or \"smb\"."
+  }
+
+  validation {
+    condition     = var.protocol == "nfs" || var.deploy_origin
+    error_message = "protocol = \"smb\" needs deploy_origin = true: the Managed AD lives in the origin VPC."
+  }
+}
+
 variable "origin_azs" {
   description = "AZ letters for the origin side, appended to origin_region (\"a\" = <region>a). One private subnet per AZ. Single-AZ FSxN uses the first, Multi-AZ needs two, e.g. [\"a\", \"b\"]."
   type        = list(string)
@@ -109,4 +125,36 @@ variable "cache_nat_gateway" {
   description = "true = public subnet + internet gateway + NAT gateway in the cache VPC. FSx for ONTAP never needs it; keep it off unless you add instances that need the internet."
   type        = bool
   default     = false
+}
+
+# --- Managed AD (protocol = "smb" only) ------------------------------------
+
+variable "ad_domain_name" {
+  description = "Domain of the AWS Managed Microsoft AD created when protocol = \"smb\"."
+  type        = string
+  default     = "flexcache.lab"
+}
+
+variable "ad_short_name" {
+  description = "NetBIOS name of the domain (up to 15 characters)."
+  type        = string
+  default     = "FLEXCACHE"
+}
+
+variable "ad_edition" {
+  description = "Standard (enough for this lab) or Enterprise."
+  type        = string
+  default     = "Standard"
+}
+
+variable "ad_az" {
+  description = "AZ letter of the second subnet the directory needs, when origin_azs has only one. null = the first of a, b, c ... not in origin_azs."
+  type        = string
+  default     = null
+}
+
+variable "ad_subnet_cidr" {
+  description = "CIDR of that second subnet. null = x.x.200.0/24 from origin_vpc_cidr."
+  type        = string
+  default     = null
 }

@@ -2,6 +2,7 @@
 #   Network Origin (origin VPC)  when deploy_origin = true
 #   Network Cache  (cache VPC)   when deploy_cache  = true
 #   VPC peering between them     only when both are deployed
+#   AWS Managed Microsoft AD     only when protocol = "smb" (in the origin VPC)
 # deploy_origin / deploy_cache come from common.tfvars and drive 02-fsxn too.
 
 # --- Availability Zones and subnets ------------------------------------------
@@ -22,6 +23,13 @@ locals {
   : var.origin_nat_gateway ? [cidrsubnet(var.origin_vpc_cidr, 8, 101)] : [])
   cache_public_subnet_cidrs = (var.cache_public_subnet_cidrs != null ? var.cache_public_subnet_cidrs
   : var.cache_nat_gateway ? [cidrsubnet(var.cache_vpc_cidr, 8, 101)] : [])
+
+  # Managed AD needs two subnets in different AZs. With a single origin AZ, add one
+  # in the first free AZ letter (or ad_az); with two origin AZs, reuse their subnets.
+  smb           = var.protocol == "smb"
+  ad_az_letter  = coalesce(var.ad_az, try([for l in ["a", "b", "c", "d", "e", "f"] : l if !contains(var.origin_azs, l)][0], "b"))
+  ad_extra_az   = local.smb && length(var.origin_azs) < 2
+  ad_subnet_new = local.ad_extra_az ? { cidr = coalesce(var.ad_subnet_cidr, cidrsubnet(var.origin_vpc_cidr, 8, 200)), az = "${var.origin_region}${local.ad_az_letter}" } : null
 }
 
 # --- Network Origin ----------------------------------------------------------
@@ -37,6 +45,7 @@ module "origin_network" {
   private_subnet_cidrs = local.origin_private_subnet_cidrs
   public_subnet_cidrs  = local.origin_public_subnet_cidrs
   enable_nat_gateway   = var.origin_nat_gateway
+  directory_subnet     = local.ad_subnet_new
 }
 
 # --- Network Cache -----------------------------------------------------------
@@ -73,6 +82,26 @@ module "peering" {
   accepter_vpc_id          = module.cache_network[0].vpc_id
   accepter_cidr            = module.cache_network[0].vpc_cidr
   accepter_route_table_ids = concat(module.cache_network[0].private_route_table_ids, module.cache_network[0].public_route_table_ids)
+}
+
+# --- AWS Managed Microsoft AD (protocol = "smb") ------------------------------
+module "directory" {
+  count = local.smb && var.deploy_origin ? 1 : 0
+
+  source    = "../../modules/04-managed-ad"
+  providers = { aws = aws.origin }
+
+  name           = local.name_prefix
+  domain_name    = var.ad_domain_name
+  short_name     = var.ad_short_name
+  edition        = var.ad_edition
+  admin_password = random_password.ad_admin[0].result
+  vpc_id         = module.origin_network[0].vpc_id
+  subnet_ids     = module.origin_network[0].directory_subnet_ids
+  peer_cidrs     = var.deploy_cache ? [var.cache_vpc_cidr] : []
+
+  # The cache side reaches the domain controllers over the peering routes.
+  depends_on = [module.peering]
 }
 
 # --- State moves -------------------------------------------------------------

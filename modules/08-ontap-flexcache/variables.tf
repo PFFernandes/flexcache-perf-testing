@@ -14,6 +14,17 @@ variable "client_region" {
   type = string
 }
 
+variable "client_os" {
+  description = "linux (runs flexcache.py) or windows (runs flexcache.ps1)."
+  type        = string
+  default     = "linux"
+
+  validation {
+    condition     = contains(["linux", "windows"], var.client_os)
+    error_message = "client_os must be linux or windows."
+  }
+}
+
 variable "client_role_name" {
   description = "IAM role of the origin client; gets read access to the fsxadmin secret."
   type        = string
@@ -56,6 +67,7 @@ variable "origin" {
     intercluster_ips = list(string)
     svm_name         = string
     volume_name      = string
+    junction_path    = optional(string, "/vol_origin")
   })
 }
 
@@ -90,4 +102,25 @@ variable "aggregates" {
   description = "Cache aggregates. FSx for ONTAP: aggr1 (aggr2... with more HA pairs on SINGLE_AZ_2)."
   type        = list(string)
   default     = ["aggr1"]
+}
+
+# --- SMB (protocol = "smb") -------------------------------------------------------------
+
+variable "protocol" {
+  type    = string
+  default = "nfs"
+
+  validation {
+    condition     = var.protocol == "nfs" || var.client_os == "windows"
+    error_message = "protocol = \"smb\" runs on a Windows origin client. Re-apply 03-ec2 with protocol = \"smb\" first."
+  }
+}
+
+variable "share_names" {
+  description = "SMB share names: origin share on the origin SVM (-> origin volume), cache share on the cache SVM (-> FlexCache)."
+  type = object({
+    origin = optional(string, "Origin")
+    cache  = optional(string, "Cache")
+  })
+  default = {}
 }

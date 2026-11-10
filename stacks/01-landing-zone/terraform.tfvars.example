@@ -14,3 +14,11 @@ cache_vpc_cidr = "10.20.0.0/16"
 # cache_private_subnet_cidrs = ["10.20.1.0/24"]
 # cache_public_subnet_cidrs  = ["10.20.101.0/24"]
 cache_nat_gateway = false
+
+# AWS Managed Microsoft AD, only when protocol = "smb" in common.tfvars (origin VPC).
+ad_domain_name = "flexcache.lab"
+ad_short_name  = "FLEXCACHE" # NetBIOS name, up to 15 characters
+ad_edition     = "Standard"
+# The directory needs a second subnet in another AZ when origin_azs has only one:
+# ad_az          = "b"              # default: first letter not in origin_azs
+# ad_subnet_cidr = "10.10.200.0/24" # default: x.x.200.0/24

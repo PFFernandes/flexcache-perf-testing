@@ -42,6 +42,22 @@ variable "deploy_cache" {
   }
 }
 
+variable "protocol" {
+  description = "File protocol of the lab: nfs (default, Linux clients) or smb (AWS Managed AD, Windows clients, shares Origin and Cache)."
+  type        = string
+  default     = "nfs"
+
+  validation {
+    condition     = contains(["nfs", "smb"], var.protocol)
+    error_message = "protocol must be \"nfs\" or \"smb\"."
+  }
+
+  validation {
+    condition     = var.protocol == "nfs" || var.deploy_origin
+    error_message = "protocol = \"smb\" needs deploy_origin = true: the Managed AD lives in the origin VPC."
+  }
+}
+
 variable "origin_azs" {
   description = "AZ letters for the origin side, appended to origin_region (\"a\" = <region>a). One private subnet per AZ. Single-AZ FSxN uses the first, Multi-AZ needs two, e.g. [\"a\", \"b\"]."
   type        = list(string)
@@ -101,4 +117,18 @@ variable "origin_volume" {
     storage_efficiency_enabled = optional(bool, true)
   })
   default = {}
+}
+
+variable "svm_netbios_names" {
+  description = "protocol = \"smb\" only: SMB server names of the SVMs in the domain (up to 15 characters each)."
+  type = object({
+    origin = optional(string, "FSXN-ORIGIN")
+    cache  = optional(string, "FSXN-CACHE")
+  })
+  default = {}
+
+  validation {
+    condition     = alltrue([for n in values(var.svm_netbios_names) : can(regex("^[A-Za-z0-9][A-Za-z0-9-]{0,14}$", n))])
+    error_message = "Each NetBIOS name must be 1-15 letters, digits or hyphens."
+  }
 }

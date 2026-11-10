@@ -1,6 +1,6 @@
 # Network Cache
 # The VPC on the cache side of the test: it hosts the FSx for ONTAP Cache
-# (modules/05-fsxn-cache).
+# (modules/06-fsxn-cache).
 
 data "aws_availability_zones" "available" {
   state = "available"
@@ -46,7 +46,7 @@ resource "aws_default_route_table" "this" {
 # Same allow-all rules AWS puts on a new default NACL; security is enforced by security groups.
 resource "aws_default_network_acl" "this" {
   default_network_acl_id = aws_vpc.this.default_network_acl_id
-  subnet_ids             = concat(aws_subnet.private[*].id, aws_subnet.public[*].id)
+  subnet_ids             = concat(aws_subnet.private[*].id, aws_subnet.public[*].id, aws_subnet.directory[*].id)
 
   ingress {
     rule_no    = 100
@@ -79,6 +79,18 @@ resource "aws_subnet" "private" {
   availability_zone = local.azs[count.index % length(local.azs)]
 
   tags = { Name = "${var.name}-private-${local.azs[count.index % length(local.azs)]}" }
+}
+
+# Extra private subnet in a second AZ, only for AWS Managed Microsoft AD (protocol = "smb"),
+# which always needs two subnets in different AZs. Shares the private route table.
+resource "aws_subnet" "directory" {
+  count = var.directory_subnet == null ? 0 : 1
+
+  vpc_id            = aws_vpc.this.id
+  cidr_block        = var.directory_subnet.cidr
+  availability_zone = var.directory_subnet.az
+
+  tags = { Name = "${var.name}-directory-${var.directory_subnet.az}" }
 }
 
 resource "aws_subnet" "public" {
@@ -158,6 +170,12 @@ resource "aws_route" "private_default" {
 resource "aws_route_table_association" "private" {
   count          = length(var.private_subnet_cidrs)
   subnet_id      = aws_subnet.private[count.index].id
+  route_table_id = aws_route_table.private.id
+}
+
+resource "aws_route_table_association" "directory" {
+  count          = length(aws_subnet.directory)
+  subnet_id      = aws_subnet.directory[count.index].id
   route_table_id = aws_route_table.private.id
 }
 

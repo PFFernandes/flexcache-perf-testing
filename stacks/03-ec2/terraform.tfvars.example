@@ -4,14 +4,24 @@
 origin_ec2 = true
 cache_ec2  = true
 
-instance_type = "t3.small" # c6in.xlarge or larger for real performance numbers
-architecture  = "x86_64"   # arm64 for Graviton types (t4g, c7g ...)
+# instance_type = "t3.small" # default: t3.small (Linux) or t3.medium (Windows); c6in.xlarge or larger for real numbers
+architecture = "x86_64" # arm64 for Graviton types (t4g, c7g ...); Windows is x86_64 only
 
-# Access from your Mac (no internet in the VPCs):
-enable_eice = true # aws ec2-instance-connect ssh --instance-id <id> --connection-type eice
+# Access from your Mac (no internet in the VPCs). The client OS follows protocol in common.tfvars:
+# nfs = Amazon Linux 2023, smb = Windows Server 2022.
+enable_eice = true # Linux: aws ec2-instance-connect ssh ... / Windows: RDP tunnel (see the connect_eice output)
 enable_ssm  = true # aws ssm start-session --target <id>   (3 interface endpoints per VPC)
 
 # NFS
 # nfs_options           = "vers=4.1,nconnect=8,hard,timeo=600"
 flexcache_junction_path = "/vol_cache" # same as stacks/04-flexcache
 cache_mounts_origin     = false        # true = cache client also mounts vol_origin over the peering (baseline)
+
+# SMB (protocol = "smb"): join the Windows clients to the Managed AD (false = workgroup, shares by IP).
+domain_join = true
+
+# SMB (protocol = "smb"): drive letters on the Windows clients.
+smb_drives = {
+  origin = "O" # \\<origin SVM>\Origin
+  cache  = "X" # \\<cache SVM>\Cache
+}

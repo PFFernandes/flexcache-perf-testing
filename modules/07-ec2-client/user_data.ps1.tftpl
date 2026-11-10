@@ -1,0 +1,106 @@
+<powershell>
+# Rendered by modules/07-ec2-client (os = windows). Runs once, at first boot (EC2Launch v2).
+#  1. Writes C:\fsxn\fsxn-map.ps1 and a scheduled task that runs it every minute as SYSTEM.
+#     It sets the local Administrator password from the AD Admin secret (once),
+%{ if domain_join != null ~}
+#     joins the domain ${domain_join.domain_name} (once, after the rename, then restarts),
+%{ endif ~}
+#     and maps each SMB share to its drive letter for every user. Shares that don't exist
+#     yet (the Cache share appears in stack 04) are mapped as soon as they do.
+%{ if domain_join != null ~}
+#  2. Sends DNS queries for ${domain_join.domain_name} to the domain controllers (NRPT rule).
+#     Everything else still goes to the VPC DNS, so the VPC endpoints keep resolving.
+%{ endif ~}
+#  3. Renames the computer to "${hostname}" and restarts.
+$ErrorActionPreference = 'Continue'
+New-Item -ItemType Directory -Force -Path 'C:\fsxn' | Out-Null
+
+@'
+# Maps the FSx for ONTAP SMB shares. Log: C:\fsxn\fsxn-map.log
+$ErrorActionPreference = 'Stop'
+$log = 'C:\fsxn\fsxn-map.log'
+function Write-Log($msg) { Add-Content -Path $log -Value ("{0:s} {1}" -f (Get-Date), $msg) }
+
+$secretName = '${secret_name}'
+$region     = '${region}'
+$hostname   = '${hostname}'
+$domain     = '${domain_join == null ? "" : domain_join.domain_name}'
+$ou         = '${domain_join == null ? "" : domain_join.ou}'
+$maps = @(
+%{ for share, m in mappings ~}
+    @{ Drive = '${m.drive}:'; Path = '\\${m.server}\${share}'; Fallback = '${m.fallback == null ? "" : "\\\\${m.fallback}\\${share}"}' }
+%{ endfor ~}
+)
+
+function Test-Mapped($m) {
+    foreach ($p in @($m.Path, $m.Fallback)) {
+        if ($p -and (Get-SmbGlobalMapping -RemotePath $p -ErrorAction SilentlyContinue)) { return $true }
+    }
+    return $false
+}
+
+$missing      = @($maps | Where-Object { -not (Test-Mapped $_) })
+$passwordDone = Test-Path 'C:\fsxn\administrator-password-set'
+$joined       = (-not $domain) -or (Get-CimInstance Win32_ComputerSystem).PartOfDomain
+if ($missing.Count -eq 0 -and $passwordDone -and $joined) { exit 0 }
+
+try {
+    Import-Module AWSPowerShell -ErrorAction SilentlyContinue
+    $secret = (Get-SECSecretValue -SecretId $secretName -Region $region).SecretString | ConvertFrom-Json
+} catch {
+    Write-Log "cannot read secret $secretName yet: $($_.Exception.Message)"
+    exit 0
+}
+$password   = ConvertTo-SecureString $secret.password -AsPlainText -Force
+$credential = New-Object System.Management.Automation.PSCredential ("$($secret.short_name)\$($secret.username)", $password)
+
+if (-not $passwordDone) {
+    Set-LocalUser -Name 'Administrator' -Password $password
+    New-Item -ItemType File -Force -Path 'C:\fsxn\administrator-password-set' | Out-Null
+    Write-Log 'local Administrator password set (same as the AD Admin password)'
+}
+
+if (-not $joined) {
+    # The rename from the first boot must be done (restarted) before joining under the new name.
+    if ($env:COMPUTERNAME -ne $hostname) { Write-Log "waiting for the rename to $hostname"; exit 0 }
+    try {
+        Add-Computer -DomainName $domain -OUPath $ou -Credential $credential -Force -ErrorAction Stop
+        Write-Log "joined $domain in $ou, restarting"
+        Restart-Computer -Force
+    } catch {
+        Write-Log "cannot join $domain yet: $($_.Exception.Message)"
+    }
+    exit 0 # map the shares after the restart, as a domain member
+}
+
+foreach ($m in $missing) {
+    $path = $m.Path
+    $server = ($m.Path -split '\\')[2]
+    if ($m.Fallback -and -not (Resolve-DnsName $server -ErrorAction SilentlyContinue)) { $path = $m.Fallback }
+    try {
+        New-SmbGlobalMapping -RemotePath $path -LocalPath $m.Drive -Credential $credential -Persistent $true -ErrorAction Stop | Out-Null
+        Write-Log "mapped $path to $($m.Drive)"
+    } catch {
+        Write-Log "not mapped yet: $($path): $($_.Exception.Message)"
+    }
+}
+'@ | Set-Content -Path 'C:\fsxn\fsxn-map.ps1' -Encoding UTF8
+
+%{ if domain_join != null ~}
+# Domain DNS: only names under ${domain_join.domain_name} go to the domain controllers.
+Get-DnsClientNrptRule | Where-Object { $_.Namespace -contains '.${domain_join.domain_name}' } | ForEach-Object { Remove-DnsClientNrptRule -Name $_.Name -Force }
+Add-DnsClientNrptRule -Namespace '.${domain_join.domain_name}', '${domain_join.domain_name}' -NameServers ${join(", ", [for ip in domain_join.dns_ips : "'${ip}'"])}
+Clear-DnsClientCache
+
+%{ endif ~}
+$action   = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -ExecutionPolicy Bypass -File C:\fsxn\fsxn-map.ps1'
+$everyMin = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
+$atBoot   = New-ScheduledTaskTrigger -AtStartup
+Register-ScheduledTask -TaskName 'fsxn-map' -Action $action -Trigger @($everyMin, $atBoot) -User 'SYSTEM' -RunLevel Highest -Force | Out-Null
+
+# Computer name. The restart is scheduled so this script can finish first.
+if ($env:COMPUTERNAME -ne '${hostname}') {
+    Rename-Computer -NewName '${hostname}' -Force
+    shutdown.exe /r /t 30 /c "Rename to ${hostname}"
+}
+</powershell>

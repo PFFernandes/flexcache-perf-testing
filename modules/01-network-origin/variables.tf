@@ -41,3 +41,12 @@ variable "enable_s3_gateway_endpoint" {
   type        = bool
   default     = true
 }
+
+variable "directory_subnet" {
+  description = "Extra private subnet for AWS Managed Microsoft AD, in an AZ not used by the other subnets. null = none (protocol = \"nfs\", or two AZs already exist)."
+  type = object({
+    cidr = string
+    az   = string
+  })
+  default = null
+}
