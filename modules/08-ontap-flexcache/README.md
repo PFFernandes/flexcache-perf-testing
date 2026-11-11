@@ -19,11 +19,11 @@ Origin management IP in its own VPC and the Cache one over the peering.
 What `flexcache.py` does on ONTAP:
 - **Cluster peer** Origin ⇄ Cache over the intercluster IPs, with a one-time passphrase generated on
   the client. If only one side exists (an interrupted run), it is removed and both are recreated.
-- **SVM peer** `svm_cache` → `svm_origin` with the `flexcache` application, accepted on the Origin.
-- **FlexCache volume** on `svm_cache`, origin `vol_origin` on `svm_origin`, size / junction path /
+- **SVM peer** `svm-cache` → `svm-origin` with the `flexcache` application, accepted on the Origin.
+- **FlexCache volume** on `svm-cache`, origin `vol_origin` on `svm-origin`, size / junction path /
   aggregates from the inputs (`POST /api/storage/flexcache/flexcaches`).
-- **SMB shares** (`protocol = "smb"`, `flexcache.ps1` only): `Origin` on `svm_origin` → the origin
-  junction path, `Cache` on `svm_cache` → the FlexCache junction path (`POST /api/protocols/cifs/shares`),
+- **SMB shares** (`protocol = "smb"`, `flexcache.ps1` only): `origin` on `svm-origin` → the origin
+  junction path, `cache` on `svm-cache` → the FlexCache junction path (`POST /api/protocols/cifs/shares`),
   with SMB encryption required. Names from `share_names`. On Windows the script is saved in `C:\fsxn`
   (SYSTEM and Administrators only), and the certificate check is skipped only for the two ONTAP
   management IPs.
@@ -51,7 +51,7 @@ tags.
 | `origin` = `{ management_ip, intercluster_ips, svm_name, volume_name, junction_path }` | required (`junction_path` default `/vol_origin`) |
 | `client_os` | `linux` (`windows` runs `flexcache.ps1`) |
 | `protocol` | `nfs` (`smb` needs `client_os = "windows"`) |
-| `share_names` | `{ origin = "Origin", cache = "Cache" }` |
+| `share_names` | `{ origin = "origin", cache = "cache" }` |
 | `cache` = `{ management_ip, intercluster_ips, svm_name }` | required |
 | `flexcache_name` / `flexcache_size_gib` / `flexcache_junction_path` | `vol_cache` / `500` / `/vol_cache` |
 | `aggregates` | `["aggr1"]` |

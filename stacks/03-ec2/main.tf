@@ -3,9 +3,9 @@
 #   protocol = "smb":           Windows Server 2022 joined to the Managed AD (domain_join),
 #                               SMB shares mapped to drive letters.
 #   Origin client: origin VPC, same subnet as the FSx for ONTAP Origin.
-#                  NFS: vol_origin -> /mnt/fsxn/vol_origin.  SMB: share Origin -> O:
+#                  NFS: vol_origin -> /mnt/fsxn/vol_origin.  SMB: share origin -> O:
 #   Cache client:  cache VPC, same subnet as the FSx for ONTAP Cache.
-#                  NFS: vol_cache (FlexCache) -> /mnt/fsxn/vol_cache.  SMB: share Cache -> X:
+#                  NFS: vol_cache (FlexCache) -> /mnt/fsxn/vol_cache.  SMB: share cache -> X:
 #                  cache_mounts_origin = true adds the Origin over the peering as a baseline.
 # Each client is switched on with deploy_<side> (common.tfvars) AND <side>_ec2.
 # Reads the networks from 01-landing-zone and the NFS endpoints from 02-fsxn.
@@ -49,11 +49,12 @@ locals {
     ou          = local.directory.computers_ou
   } : null
 
-  # SMB shares, created by stacks/04-flexcache: Origin -> vol_origin, Cache -> the FlexCache.
+  # SMB shares, created by stacks/04-flexcache (share_names there, default origin / cache):
+  # origin -> vol_origin, cache -> the FlexCache.
   # Joined: mapped by the SVM's SMB DNS name (in the AD domain), with its IP as a fallback.
   # Not joined: mapped by IP, since the VPC DNS doesn't resolve the AD domain.
   origin_shares = local.smb && try(local.fsxn_origin.svm_smb_ip, null) != null ? {
-    Origin = local.join && try(local.fsxn_origin.svm_smb_dns_name, null) != null ? {
+    origin = local.join && try(local.fsxn_origin.svm_smb_dns_name, null) != null ? {
       drive = var.smb_drives.origin, server = local.fsxn_origin.svm_smb_dns_name, fallback = local.fsxn_origin.svm_smb_ip
       } : {
       drive = var.smb_drives.origin, server = local.fsxn_origin.svm_smb_ip, fallback = null
@@ -61,7 +62,7 @@ locals {
   } : {}
   cache_shares = merge(
     local.smb && try(local.fsxn_cache.svm_smb_ip, null) != null ? {
-      Cache = local.join && try(local.fsxn_cache.svm_smb_dns_name, null) != null ? {
+      cache = local.join && try(local.fsxn_cache.svm_smb_dns_name, null) != null ? {
         drive = var.smb_drives.cache, server = local.fsxn_cache.svm_smb_dns_name, fallback = local.fsxn_cache.svm_smb_ip
         } : {
         drive = var.smb_drives.cache, server = local.fsxn_cache.svm_smb_ip, fallback = null
@@ -115,7 +116,7 @@ module "ec2_origin" {
 
   name          = "${local.name_prefix}-origin-client"
   instance_name = "${var.creator}-origin-client"
-  hostname      = "origin"
+  hostname      = "origin-client"
   vpc_id        = local.lz.origin.vpc_id
   subnet_id     = local.lz.origin.private_subnet_ids[0] # same subnet as the FSx for ONTAP Origin
   instance_type = var.instance_type
@@ -140,7 +141,7 @@ module "ec2_cache" {
 
   name          = "${local.name_prefix}-cache-client"
   instance_name = "${var.creator}-cache-client"
-  hostname      = "cache"
+  hostname      = "cache-client"
   vpc_id        = local.lz.cache.vpc_id
   subnet_id     = local.lz.cache.private_subnet_ids[0] # same subnet as the FSx for ONTAP Cache
   instance_type = var.instance_type

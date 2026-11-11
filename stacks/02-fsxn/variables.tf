@@ -122,8 +122,8 @@ variable "origin_volume" {
 variable "svm_netbios_names" {
   description = "protocol = \"smb\" only: SMB server names of the SVMs in the domain (up to 15 characters each)."
   type = object({
-    origin = optional(string, "FSXN-ORIGIN")
-    cache  = optional(string, "FSXN-CACHE")
+    origin = optional(string, "origin")
+    cache  = optional(string, "cache")
   })
   default = {}
 

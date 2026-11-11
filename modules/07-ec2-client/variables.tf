@@ -20,7 +20,7 @@ variable "os" {
 }
 
 variable "hostname" {
-  description = "Hostname (computer name on Windows) of the instance, e.g. origin."
+  description = "Hostname (computer name on Windows) of the instance, e.g. origin-client."
   type        = string
 
   validation {

@@ -12,6 +12,6 @@ create_secrets_endpoint = true
 
 # protocol = "smb" (common.tfvars) only: SMB shares created next to the FlexCache.
 share_names = {
-  origin = "Origin" # on the origin SVM -> origin volume, mapped on the origin client
-  cache  = "Cache"  # on the cache SVM  -> FlexCache,     mapped on the cache client
+  origin = "origin" # on the origin SVM -> origin volume, mapped on the origin client
+  cache  = "cache"  # on the cache SVM  -> FlexCache,     mapped on the cache client
 }

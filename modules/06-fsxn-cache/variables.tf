@@ -93,7 +93,7 @@ variable "fsxadmin_password" {
 variable "svm_name" {
   description = "Name of the SVM created on the FSx for ONTAP Cache (the FlexCache volume lives in it)."
   type        = string
-  default     = "svm_cache"
+  default     = "svm-cache"
 }
 
 variable "protocol" {

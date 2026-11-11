@@ -32,6 +32,6 @@ origin_volume = {
 
 # protocol = "smb" (common.tfvars) only: SMB server names of the SVMs in the domain.
 svm_netbios_names = {
-  origin = "FSXN-ORIGIN"
-  cache  = "FSXN-CACHE"
+  origin = "origin"
+  cache  = "cache"
 }

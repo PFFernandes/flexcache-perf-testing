@@ -6,8 +6,8 @@
 # reaching them from your Mac, Terraform sends files/flexcache.py to the origin
 # client with SSM Run Command (files/ssm-run.sh), and the client does:
 #   1. cluster peer   Origin <-> Cache (intercluster LIFs, TCP 11104/11105)
-#   2. SVM peer       svm_cache <-> svm_origin, application flexcache
-#   3. FlexCache      vol_cache on svm_cache -> vol_origin on svm_origin
+#   2. SVM peer       svm-cache <-> svm-origin, application flexcache
+#   3. FlexCache      vol_cache on svm-cache -> vol_origin on svm-origin
 #   4. SMB shares     protocol = "smb" only: Origin -> vol_origin, Cache -> vol_cache
 # `terraform destroy` sends the same script with "delete" (reverse order).
 #

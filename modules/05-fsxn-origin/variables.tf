@@ -93,7 +93,7 @@ variable "fsxadmin_password" {
 variable "svm_name" {
   description = "Name of the SVM created on the FSx for ONTAP Origin."
   type        = string
-  default     = "svm_origin"
+  default     = "svm-origin"
 }
 
 variable "volumes" {

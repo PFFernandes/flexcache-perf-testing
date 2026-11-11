@@ -6,7 +6,7 @@ test client on each side, and connects the two file systems with **FlexCache**.
 - **Layers you deploy one at a time:** four stacks, each with its own state.
 - **Origin, Cache or both:** two switches in `common.tfvars`.
 - **NFS or SMB:** `protocol` in `common.tfvars`. NFS (default) uses Linux clients; SMB adds an AWS
-  Managed Microsoft AD, Windows clients and the shares `Origin` and `Cache`.
+  Managed Microsoft AD, Windows clients and the shares `origin` and `cache`.
 - **Runs from your Mac:** the Terraform state stays there. There is no bastion host and no VPN; the
   VPCs have no internet access, NAT gateway or public IPs.
 - **FlexCache is configured from the origin client:** Terraform sends it a script with SSM
@@ -29,7 +29,7 @@ test client on each side, and connects the two file systems with **FlexCache**.
           ORIGIN VPC  10.10.0.0/16                           CACHE VPC  10.20.0.0/16
   ┌──────────────────────────────────────┐            ┌──────────────────────────────────────┐
   │ FSx for ONTAP Origin                 │  peering   │ FSx for ONTAP Cache                  │
-  │   svm_origin / vol_origin (FlexGroup)│◄──────────►│   svm_cache / vol_cache (FlexCache)  │
+  │   svm-origin / vol_origin (FlexGroup)│◄──────────►│   svm-cache / vol_cache (FlexCache)  │
   │          ▲ NFS     ▲ ONTAP REST      │intercluster│          ▲ NFS     ▲ ONTAP REST      │
   │ EC2 origin client ─┴─────────────────┼────────────┼────────────────────┘                 │
   │   /mnt/fsxn/vol_origin               │TCP 11104/5 │ EC2 cache client                     │
@@ -113,7 +113,7 @@ or apply first prints the settings files it loaded, so check the regions there.
 | 1 | `./tf.sh 01-landing-zone init`<br>`./tf.sh 01-landing-zone plan`<br>`./tf.sh 01-landing-zone apply-plan` | Origin and Cache VPCs, subnets, S3 endpoint, peering; SMB: Managed AD | ~2 min; SMB: +20-45 min |
 | 2 | `./tf.sh 02-fsxn init`<br>`./tf.sh 02-fsxn plan`<br>`./tf.sh 02-fsxn apply-plan` | FSx for ONTAP Origin + Cache, SVMs, `vol_origin`, fsxadmin secret | 20-40 min, billed hourly |
 | 3 | `./tf.sh 03-ec2 init`<br>`./tf.sh 03-ec2 plan`<br>`./tf.sh 03-ec2 apply-plan` | origin and cache EC2 clients (Windows for SMB), Instance Connect + SSM endpoints | ~5 min; Windows ~10 min |
-| 4 | `./tf.sh 04-flexcache init`<br>`./tf.sh 04-flexcache plan`<br>`./tf.sh 04-flexcache apply-plan` | Secrets Manager endpoint, then on the origin client: cluster peer, SVM peer, `vol_cache`; SMB: shares `Origin` and `Cache` | ~5-10 min |
+| 4 | `./tf.sh 04-flexcache init`<br>`./tf.sh 04-flexcache plan`<br>`./tf.sh 04-flexcache apply-plan` | Secrets Manager endpoint, then on the origin client: cluster peer, SVM peer, `vol_cache`; SMB: shares `origin` and `cache` | ~5-10 min |
 
 During step 4 the apply prints the log of the origin client, e.g.
 `[flexcache] creating cluster peer ...`, `SVM peer state: peered`, `FlexCache vol_cache created`.
@@ -152,7 +152,7 @@ aws ec2-instance-connect open-tunnel --instance-id <id> --remote-port 3389 --loc
 aws secretsmanager get-secret-value --secret-id <creator>-<project>/ad-admin --query SecretString --output text
 ```
 
-The origin client shows the `Origin` share as `O:`, the cache client the `Cache` share as `X:` (up
+The origin client shows the `origin` share as `O:`, the cache client the `cache` share as `X:` (up
 to a minute after step 4). The mapping log is `C:\fsxn\fsxn-map.log`.
 
 ### 6. Tear everything down
@@ -240,12 +240,12 @@ Mac: the **origin EC2 client** does the work.
    Cache management IP (over the peering):
    - **cluster peer** Origin ⇄ Cache over the intercluster IPs, with a one-time passphrase
      generated on the client;
-   - **SVM peer** `svm_cache` ⇄ `svm_origin` with the `flexcache` application, accepted on the
+   - **SVM peer** `svm-cache` ⇄ `svm-origin` with the `flexcache` application, accepted on the
      Origin;
-   - **FlexCache volume** `vol_cache` on `svm_cache` (500 GiB, `aggr1`), origin `vol_origin`,
+   - **FlexCache volume** `vol_cache` on `svm-cache` (500 GiB, `aggr1`), origin `vol_origin`,
      mounted at `/vol_cache`;
-   - **SMB only:** share `Origin` on `svm_origin` (→ `/vol_origin`) and share `Cache` on
-     `svm_cache` (→ `/vol_cache`), names set by `share_names`, with SMB encryption required.
+   - **SMB only:** share `origin` on `svm-origin` (→ `/vol_origin`) and share `cache` on
+     `svm-cache` (→ `/vol_cache`), names set by `share_names`, with SMB encryption required.
 4. `terraform destroy` runs the same script with `delete`: SMB shares, FlexCache (unmount, offline,
    delete), SVM peer, cluster peer.
 
@@ -262,9 +262,9 @@ Module variables are never set directly: each stack fills them in. You only edit
 |---|---|
 | `common.tfvars` (every stack) | `project`, `creator`, `origin_region`, `cache_region`, `deploy_origin`, `deploy_cache`, `protocol`, `origin_azs`, `cache_azs` |
 | `stacks/01-landing-zone/terraform.tfvars` | VPC CIDRs, subnet CIDR overrides, `origin_nat_gateway` / `cache_nat_gateway` (default `false`); SMB: `ad_domain_name` (`flexcache.lab`), `ad_short_name` (`FLEXCACHE`), `ad_edition` (`Standard`), `ad_az`, `ad_subnet_cidr` |
-| `stacks/02-fsxn/terraform.tfvars` | `origin_fsxn` / `cache_fsxn` (default SINGLE_AZ_1, 128 MB/s, 1024 GiB), `origin_volume` (default `vol_origin`, FlexGroup, 800 GiB, storage efficiency on); SMB: `svm_netbios_names` (`FSXN-ORIGIN`, `FSXN-CACHE`) |
+| `stacks/02-fsxn/terraform.tfvars` | `origin_fsxn` / `cache_fsxn` (default SINGLE_AZ_1, 128 MB/s, 1024 GiB), `origin_volume` (default `vol_origin`, FlexGroup, 800 GiB, storage efficiency on); SMB: `svm_netbios_names` (`origin`, `cache`) |
 | `stacks/03-ec2/terraform.tfvars` | `origin_ec2` / `cache_ec2`, `instance_type` (`t3.small` Linux, `t3.medium` Windows), `enable_eice` / `enable_ssm`, `nfs_options`, `cache_mounts_origin`; SMB: `domain_join` (`true`), `smb_drives` (`O`, `X`) |
-| `stacks/04-flexcache/terraform.tfvars` | `flexcache_name` (`vol_cache`), `flexcache_size_gib` (500), `flexcache_junction_path`, `cache_aggregates`, `create_secrets_endpoint`; SMB: `share_names` (`Origin`, `Cache`) |
+| `stacks/04-flexcache/terraform.tfvars` | `flexcache_name` (`vol_cache`), `flexcache_size_gib` (500), `flexcache_junction_path`, `cache_aggregates`, `create_secrets_endpoint`; SMB: `share_names` (`origin`, `cache`) |
 
 The stack files are optional; without them every value has a default. `tf.sh` passes
 `common.tfvars` to every stack and, before each plan or apply, prints the files it loads and the
@@ -307,11 +307,11 @@ protocol = "nfs" # default; "smb" for Windows and SMB shares
 | What | `nfs` (default) | `smb` |
 |---|---|---|
 | Directory (`01-landing-zone`) | none | AWS Managed Microsoft AD `flexcache.lab` in the origin VPC, on the first origin subnet plus a second one in another AZ (`x.x.200.0/24`); Admin password in the secret `<creator>-<project>/ad-admin` |
-| SVMs (`02-fsxn`) | UNIX security | joined to the domain as `FSXN-ORIGIN` / `FSXN-CACHE`, NTFS security, TCP 445 open |
-| Clients (`03-ec2`) | Amazon Linux 2023, NFS mounts under `/mnt/fsxn` | Windows Server 2022, computer names `origin` / `cache`, joined to the domain |
+| SVMs (`02-fsxn`) | UNIX security | joined to the domain as `origin` / `cache` (NetBIOS), NTFS security, TCP 445 open |
+| Clients (`03-ec2`) | Amazon Linux 2023, NFS mounts under `/mnt/fsxn` | Windows Server 2022, computer names `origin-client` / `cache-client`, joined to the domain |
 | FlexCache (`04-flexcache`) | `flexcache.py` | `flexcache.ps1`, plus the shares |
-| Origin client | `/mnt/fsxn/vol_origin` | share `Origin` (→ `vol_origin`) on `O:` |
-| Cache client | `/mnt/fsxn/vol_cache` | share `Cache` (→ the FlexCache `vol_cache`) on `X:` |
+| Origin client | `/mnt/fsxn/vol_origin` | share `origin` (→ `vol_origin`) on `O:` |
+| Cache client | `/mnt/fsxn/vol_cache` | share `cache` (→ the FlexCache `vol_cache`) on `X:` |
 
 - **Pick the protocol before the first apply.** Switching later rebuilds the SVMs, the origin volume
   and the clients: destroy `04`, `03` and `02` first, then apply all four stacks again.
@@ -329,9 +329,14 @@ protocol = "nfs" # default; "smb" for Windows and SMB shares
   `flexcache.ps1` skips the certificate check only for the two ONTAP management IPs (FSx uses a
   self-signed certificate); Secrets Manager calls are validated as usual. The clients may read the
   AD Admin secret only in their own account and region.
+- **Names in the domain:** SVMs `svm-origin` / `svm-cache` with the SMB (NetBIOS) names `origin` /
+  `cache`, shares `origin` / `cache`, Windows clients `origin-client` / `cache-client`. The SVM and
+  client names must differ: in the same domain they would share one computer account.
+- **Security style follows the protocol:** `NTFS` with `smb`, `UNIX` with `nfs`, on the SVM root
+  and `vol_origin`; the FlexCache takes the origin's.
 - **Only the domain's names go to the domain controllers.** An NRPT rule sends `*.flexcache.lab`
   to the AD DNS and everything else to the VPC DNS, so the VPC endpoints keep working.
-- **Shares are mapped by the SVM's name** (`\\FSXN-ORIGIN.flexcache.lab\Origin`, Kerberos), or by
+- **Shares are mapped by the SVM's name** (`\\origin.flexcache.lab\origin`, Kerberos), or by
   its IP while that name doesn't resolve. With `domain_join = false` the clients stay in a
   workgroup and map by IP (NTLM).
 - **Each Windows client gets a Secrets Manager endpoint** in its VPC, so stack 04 doesn't create a
@@ -355,7 +360,7 @@ map the SMB shares instead; see [NFS or SMB](#nfs-or-smb). The rest of this sect
 default.
 
 Each client is an Amazon Linux 2023 instance in the **same private subnet as its side's FSx for
-ONTAP**, with the Linux hostname `origin` or `cache`. At boot it adds the NFS mounts to `/etc/fstab`, and a systemd timer retries `mount -a` every
+ONTAP**, with the Linux hostname `origin-client` or `cache-client`. At boot it adds the NFS mounts to `/etc/fstab`, and a systemd timer retries `mount -a` every
 minute, so a volume that doesn't exist yet is mounted within a minute of being created. Each mounted
 volume's top directory is set to `1777`, so `ssm-user` (SSM) and `ec2-user` (Instance Connect) can
 both write to it:

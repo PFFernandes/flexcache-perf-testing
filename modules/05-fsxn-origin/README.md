@@ -28,7 +28,7 @@ Design notes
 | Input | Default |
 |---|---|
 | `name`, `vpc_id`, `subnet_ids`, `allowed_cidrs`, `fsxadmin_password` | required |
-| `svm_name` | `svm_origin` |
+| `svm_name` | `svm-origin` |
 | `deployment_type` | `SINGLE_AZ_1` |
 | `storage_capacity_gib` | `1024` |
 | `throughput_capacity_per_ha_pair` | `128` |

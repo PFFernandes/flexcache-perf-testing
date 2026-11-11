@@ -22,6 +22,6 @@ domain_join = true
 
 # SMB (protocol = "smb"): drive letters on the Windows clients.
 smb_drives = {
-  origin = "O" # \\<origin SVM>\Origin
-  cache  = "X" # \\<cache SVM>\Cache
+  origin = "O" # \\<origin SVM>\origin
+  cache  = "X" # \\<cache SVM>\cache
 }

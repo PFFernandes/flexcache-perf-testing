@@ -11,9 +11,9 @@ the VPC peering.
 
 create (idempotent - every step checks what already exists):
   1. cluster peer   Origin <-> Cache over the intercluster LIFs, one-time passphrase
-  2. SVM peer       svm_cache <-> svm_origin, application "flexcache"
-  3. FlexCache      vol_cache on svm_cache, origin = vol_origin on svm_origin
-  4. SMB shares     "Origin" on svm_origin -> vol_origin, "Cache" on svm_cache -> vol_cache,
+  2. SVM peer       svm-cache <-> svm-origin, application "flexcache"
+  3. FlexCache      vol_cache on svm-cache, origin = vol_origin on svm-origin
+  4. SMB shares     "origin" on svm-origin -> vol_origin, "cache" on svm-cache -> vol_cache,
                     with SMB encryption required
 delete: the same in reverse (shares, FlexCache, SVM peer, cluster peer).
 

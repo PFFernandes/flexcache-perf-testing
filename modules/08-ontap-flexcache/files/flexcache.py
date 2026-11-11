@@ -11,8 +11,8 @@ Cache one is reached over the VPC peering.
 create (idempotent - every step checks what already exists):
   1. cluster peer   Origin <-> Cache, over the intercluster LIFs, with a one-time
                     passphrase generated here (it never leaves this machine)
-  2. SVM peer       svm_cache <-> svm_origin, application "flexcache"
-  3. FlexCache      vol_cache on svm_cache, origin = vol_origin on svm_origin,
+  2. SVM peer       svm-cache <-> svm-origin, application "flexcache"
+  3. FlexCache      vol_cache on svm-cache, origin = vol_origin on svm-origin,
                     mounted at the junction path
 delete: the same in reverse (FlexCache, SVM peer, cluster peer).
 

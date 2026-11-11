@@ -114,8 +114,8 @@ variable "cache_aggregates" {
 variable "share_names" {
   description = "protocol = \"smb\" only: SMB share names. origin = on the origin SVM (origin volume), cache = on the cache SVM (FlexCache)."
   type = object({
-    origin = optional(string, "Origin")
-    cache  = optional(string, "Cache")
+    origin = optional(string, "origin")
+    cache  = optional(string, "cache")
   })
   default = {}
 }

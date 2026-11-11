@@ -119,8 +119,8 @@ variable "protocol" {
 variable "share_names" {
   description = "SMB share names: origin share on the origin SVM (-> origin volume), cache share on the cache SVM (-> FlexCache)."
   type = object({
-    origin = optional(string, "Origin")
-    cache  = optional(string, "Cache")
+    origin = optional(string, "origin")
+    cache  = optional(string, "cache")
   })
   default = {}
 }

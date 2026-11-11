@@ -98,7 +98,7 @@ module "fsxn_origin" {
   active_directory = local.active_directory["origin"]
   ad_password      = local.ad_password
 
-  svm_name = "svm_origin"
+  svm_name = "svm-origin"
   volumes = {
     (var.origin_volume.name) = {
       size_gib                   = var.origin_volume.size_gib
@@ -136,7 +136,7 @@ module "fsxn_cache" {
   active_directory = local.active_directory["cache"]
   ad_password      = local.ad_password
 
-  svm_name = "svm_cache"
+  svm_name = "svm-cache"
   # No volumes: the FlexCache volume is created by stacks/04-flexcache via the ONTAP API.
 }
 
