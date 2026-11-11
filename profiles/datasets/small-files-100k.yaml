@@ -1,0 +1,12 @@
+# 100 000 small files: metadata-heavy (open/close, lookups). About 6 GiB.
+name: small-files-100k
+size:
+  files: 100000
+  file_size: 64KiB
+layout:
+  files_per_dir: 1000
+  depth: 2
+seed: 42
+writers:
+  jobs: 16
+  checksums: sample        # none | sample (1 file in 100) | all

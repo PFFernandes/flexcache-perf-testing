@@ -1,0 +1,13 @@
+# 200 large files: throughput. 200 GiB.
+name: large-files-200g
+size:
+  total: 200GiB
+  file_size: 1GiB
+layout:
+  files_per_dir: 100
+  depth: 1
+seed: 42
+writers:
+  jobs: 8
+  block_size: 1MiB
+  checksums: sample

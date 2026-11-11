@@ -1,0 +1,22 @@
+# Realistic mix: mostly small files, most of the bytes in a few large ones. 500 GiB.
+name: mixed-500g
+size:
+  total: 500GiB                  # any two of total / files / file_size
+  file_size:
+    mix:                         # weight = share of the FILES in that size range
+      - { weight: 70, range: [4KiB, 64KiB] }
+      - { weight: 25, range: [1MiB, 16MiB] }
+      - { weight: 5,  fixed: 1GiB }
+layout:
+  files_per_dir: 1000
+  depth: 2
+data:
+  compress_percent: 0            # vol_origin has storage efficiency on: keep 0 for honest numbers
+  dedupe_percent: 0
+seed: 42
+writers:
+  side: origin                   # origin | cache
+  jobs: 16
+  block_size: 1MiB
+  checksums: sample
+  fsync: false

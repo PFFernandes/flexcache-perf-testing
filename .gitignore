@@ -41,3 +41,7 @@ id_ecdsa
 id_ecdsa.*
 id_ed25519
 id_ed25519.*
+
+# --- Python ---
+__pycache__/
+*.pyc

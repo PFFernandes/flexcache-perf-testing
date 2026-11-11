@@ -1,0 +1,6 @@
+{
+  "name": "smoke",
+  "size": { "files": 200, "file_size": "4KiB-256KiB" },
+  "layout": { "files_per_dir": 50, "depth": 1 },
+  "writers": { "jobs": 4, "checksums": "all" }
+}
