@@ -13,7 +13,8 @@ create (idempotent - every step checks what already exists):
   1. cluster peer   Origin <-> Cache over the intercluster LIFs, one-time passphrase
   2. SVM peer       svm_cache <-> svm_origin, application "flexcache"
   3. FlexCache      vol_cache on svm_cache, origin = vol_origin on svm_origin
-  4. SMB shares     "Origin" on svm_origin -> vol_origin, "Cache" on svm_cache -> vol_cache
+  4. SMB shares     "Origin" on svm_origin -> vol_origin, "Cache" on svm_cache -> vol_cache,
+                    with SMB encryption required
 delete: the same in reverse (shares, FlexCache, SVM peer, cluster peer).
 
 The fsxadmin password is read here from Secrets Manager with the instance role
@@ -34,18 +35,26 @@ function Write-Log([string]$Message) { [Console]::Out.WriteLine("[flexcache] $Me
 
 $cfg = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($ConfigB64)) | ConvertFrom-Json
 
-# FSx for ONTAP uses a self-signed certificate.
+# FSx for ONTAP uses a self-signed certificate. The check is skipped ONLY for the two
+# ONTAP management IPs; every other HTTPS call (Secrets Manager) is validated as usual.
+#   PowerShell 7:   -SkipCertificateCheck on the ONTAP calls only.
+#   PowerShell 5.1: a certificate policy that accepts a bad certificate only from the
+#                   hosts registered in New-Ontap (the setting is process-wide there).
 if ($PSVersionTable.PSVersion.Major -lt 6) {
-    if (-not ('FsxnTrustAll' -as [type])) {
+    if (-not ('FsxnTrustOntap' -as [type])) {
         Add-Type -TypeDefinition @"
+using System.Collections.Generic;
 using System.Net;
 using System.Security.Cryptography.X509Certificates;
-public class FsxnTrustAll : ICertificatePolicy {
-    public bool CheckValidationResult(ServicePoint sp, X509Certificate cert, WebRequest req, int problem) { return true; }
+public class FsxnTrustOntap : ICertificatePolicy {
+    public static HashSet<string> Hosts = new HashSet<string>();
+    public bool CheckValidationResult(ServicePoint sp, X509Certificate cert, WebRequest req, int problem) {
+        return problem == 0 || (req != null && Hosts.Contains(req.RequestUri.Host));
+    }
 }
 "@
     }
-    [Net.ServicePointManager]::CertificatePolicy = New-Object FsxnTrustAll
+    [Net.ServicePointManager]::CertificatePolicy = New-Object FsxnTrustOntap
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     $script:TlsParams = @{}
 } else {
@@ -55,6 +64,7 @@ public class FsxnTrustAll : ICertificatePolicy {
 # --- minimal ONTAP REST client ------------------------------------------------------
 
 function New-Ontap([string]$Label, [string]$Address, [string]$User, [string]$Password) {
+    if ($PSVersionTable.PSVersion.Major -lt 6) { [void][FsxnTrustOntap]::Hosts.Add($Address) }
     $token = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("${User}:${Password}"))
     return @{ Label = $Label; Address = $Address; Headers = @{ Authorization = "Basic $token"; Accept = 'application/json' } }
 }
@@ -263,7 +273,8 @@ function New-Share($Side, [string]$Svm, [string]$Name, [string]$Path) {
         return
     }
     Write-Log "$($Side.Label): creating SMB share $Name -> $Path on $Svm"
-    Invoke-Ontap $Side 'POST' '/protocols/cifs/shares' @{ svm = @{ name = $Svm }; name = $Name; path = $Path } | Out-Null
+    # encryption: clients must use SMB 3 encryption for this share.
+    Invoke-Ontap $Side 'POST' '/protocols/cifs/shares' @{ svm = @{ name = $Svm }; name = $Name; path = $Path; encryption = $true } | Out-Null
 }
 
 function Remove-Share($Side, [string]$Svm, [string]$Name) {

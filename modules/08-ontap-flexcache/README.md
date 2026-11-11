@@ -23,8 +23,10 @@ What `flexcache.py` does on ONTAP:
 - **FlexCache volume** on `svm_cache`, origin `vol_origin` on `svm_origin`, size / junction path /
   aggregates from the inputs (`POST /api/storage/flexcache/flexcaches`).
 - **SMB shares** (`protocol = "smb"`, `flexcache.ps1` only): `Origin` on `svm_origin` → the origin
-  junction path, `Cache` on `svm_cache` → the FlexCache junction path (`POST /api/protocols/cifs/shares`).
-  Names from `share_names`.
+  junction path, `Cache` on `svm_cache` → the FlexCache junction path (`POST /api/protocols/cifs/shares`),
+  with SMB encryption required. Names from `share_names`. On Windows the script is saved in `C:\fsxn`
+  (SYSTEM and Administrators only), and the certificate check is skipped only for the two ONTAP
+  management IPs.
 
 Every step checks what already exists first, so re-running is safe. The password is never part of
 the SSM command or the Terraform state of this stack; the config sent to the client only holds IPs,

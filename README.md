@@ -142,8 +142,10 @@ ls -l /mnt/fsxn/vol_cache                       # shows "hello", served through 
 
 With `protocol = "smb"` the clients are Windows. Open an RDP tunnel through the Instance Connect
 Endpoint (the exact command is `connect_eice` in `./tf.sh 03-ec2 output`), then connect your RDP
-client to `localhost:13389` as `FLEXCACHE\Admin` (or the local `Administrator`), with the AD Admin
-password. The clients join the domain a few minutes after boot (one extra restart):
+client to `localhost:13389` as `FLEXCACHE\Admin`, with the AD Admin password. The clients join the
+domain a few minutes after boot (one extra restart). Until then, or if the join fails, use
+`connect_ssm` (a PowerShell session) and read `C:\fsxn\fsxn-map.log`. With `domain_join = false`
+log in as the local `Administrator`, which then gets the AD Admin password:
 
 ```bash
 aws ec2-instance-connect open-tunnel --instance-id <id> --remote-port 3389 --local-port 13389
@@ -243,7 +245,7 @@ Mac: the **origin EC2 client** does the work.
    - **FlexCache volume** `vol_cache` on `svm_cache` (500 GiB, `aggr1`), origin `vol_origin`,
      mounted at `/vol_cache`;
    - **SMB only:** share `Origin` on `svm_origin` (→ `/vol_origin`) and share `Cache` on
-     `svm_cache` (→ `/vol_cache`), names set by `share_names`.
+     `svm_cache` (→ `/vol_cache`), names set by `share_names`, with SMB encryption required.
 4. `terraform destroy` runs the same script with `delete`: SMB shares, FlexCache (unmount, offline,
    delete), SVM peer, cluster peer.
 
@@ -319,7 +321,14 @@ protocol = "nfs" # default; "smb" for Windows and SMB shares
 - **The Windows clients join the domain** (`domain_join = true` in `03-ec2`, the default) into
   `OU=Computers,OU=FLEXCACHE,...`. A scheduled task (`fsxn-map`) reads the Admin secret, joins after
   the rename and restarts, then maps the shares for every user with the domain's `Admin` account.
-  The local `Administrator` gets the same password. Fine for a lab, not for production.
+  The local `Administrator` keeps its own random password (it only gets the AD Admin password
+  with `domain_join = false`). Every user of a client sees the shares with the `Admin` account's
+  rights: fine for a lab, not for production.
+- **Hardening:** `C:\fsxn` (the task scripts, `flexcache.ps1` from stack 04 and the log) is
+  readable and writable by SYSTEM and Administrators only. The shares require SMB encryption.
+  `flexcache.ps1` skips the certificate check only for the two ONTAP management IPs (FSx uses a
+  self-signed certificate); Secrets Manager calls are validated as usual. The clients may read the
+  AD Admin secret only in their own account and region.
 - **Only the domain's names go to the domain controllers.** An NRPT rule sends `*.flexcache.lab`
   to the AD DNS and everything else to the VPC DNS, so the VPC endpoints keep working.
 - **Shares are mapped by the SVM's name** (`\\FSXN-ORIGIN.flexcache.lab\Origin`, Kerberos), or by

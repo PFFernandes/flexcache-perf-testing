@@ -25,6 +25,8 @@
 
 data "aws_region" "current" {}
 
+data "aws_caller_identity" "current" {}
+
 data "aws_default_tags" "current" {}
 
 data "aws_ssm_parameter" "ami" {
@@ -205,7 +207,9 @@ resource "aws_iam_role_policy_attachment" "ssm" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
-# Read the AD Admin secret (Windows clients). The ARN pattern covers its replica regions.
+# Read the AD Admin secret (Windows clients): this account, this region only (the
+# client reads the secret, or its replica, in its own region). Secrets Manager adds a
+# random 6-character suffix to the ARN, hence the "-??????".
 resource "aws_iam_role_policy" "read_ad_admin" {
   count = var.ad_secret == null ? 0 : 1
 
@@ -217,7 +221,7 @@ resource "aws_iam_role_policy" "read_ad_admin" {
     Statement = [{
       Effect   = "Allow"
       Action   = "secretsmanager:GetSecretValue"
-      Resource = "arn:aws:secretsmanager:*:*:secret:${var.ad_secret.name}-*"
+      Resource = "arn:aws:secretsmanager:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:secret:${var.ad_secret.name}-??????"
     }]
   })
 }

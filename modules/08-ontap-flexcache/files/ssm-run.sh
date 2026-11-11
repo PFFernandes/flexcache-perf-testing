@@ -3,7 +3,8 @@
 # Sends the FlexCache script to the origin EC2 client with SSM Run Command, waits
 # for it to finish and prints its output. Exit code 0 only if the script succeeded.
 #   Linux client (protocol nfs):   flexcache.py  with AWS-RunShellScript
-#   Windows client (protocol smb): flexcache.ps1 with AWS-RunPowerShellScript
+#   Windows client (protocol smb): flexcache.ps1 with AWS-RunPowerShellScript, saved in
+#                                  C:\fsxn (SYSTEM and Administrators only, set by stack 03)
 #
 # Environment (set by Terraform):
 #   ACTION        create | delete
@@ -35,8 +36,8 @@ PARAMS="$(mktemp)"
 trap 'rm -f "$PARAMS"' EXIT
 if [[ "$CLIENT_OS" == "windows" ]]; then
   DOCUMENT=AWS-RunPowerShellScript
-  printf '{"executionTimeout":["3600"],"commands":["$ErrorActionPreference = %s","$gz = New-Object IO.Compression.GzipStream((New-Object IO.MemoryStream(,[Convert]::FromBase64String(%s))), [IO.Compression.CompressionMode]::Decompress)","$path = Join-Path $env:SystemRoot %s","Set-Content -Path $path -Value (New-Object IO.StreamReader($gz)).ReadToEnd() -Encoding UTF8","& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $path %s %s","exit $LASTEXITCODE"]}' \
-    "'Stop'" "'$SCRIPT_GZ64'" "'Temp/flexcache.ps1'" "$ACTION" "$CONFIG_B64" > "$PARAMS"
+  printf '{"executionTimeout":["3600"],"commands":["$ErrorActionPreference = %s","$gz = New-Object IO.Compression.GzipStream((New-Object IO.MemoryStream(,[Convert]::FromBase64String(%s))), [IO.Compression.CompressionMode]::Decompress)","$path = Join-Path $env:SystemDrive %s","Set-Content -Path $path -Value (New-Object IO.StreamReader($gz)).ReadToEnd() -Encoding UTF8","& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $path %s %s","exit $LASTEXITCODE"]}' \
+    "'Stop'" "'$SCRIPT_GZ64'" "'fsxn/flexcache.ps1'" "$ACTION" "$CONFIG_B64" > "$PARAMS"
 else
   DOCUMENT=AWS-RunShellScript
   printf '{"executionTimeout":["3600"],"commands":["set -euo pipefail","echo %s | base64 -d | gunzip > /root/flexcache.py","python3 /root/flexcache.py %s %s"]}' \

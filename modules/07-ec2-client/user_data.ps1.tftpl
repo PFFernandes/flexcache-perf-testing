@@ -1,7 +1,8 @@
 <powershell>
 # Rendered by modules/07-ec2-client (os = windows). Runs once, at first boot (EC2Launch v2).
 #  1. Writes C:\fsxn\fsxn-map.ps1 and a scheduled task that runs it every minute as SYSTEM.
-#     It sets the local Administrator password from the AD Admin secret (once),
+#     Workgroup only: it sets the local Administrator password from the AD Admin secret
+#     (once). Domain members keep their own random one; log in as the domain Admin.
 %{ if domain_join != null ~}
 #     joins the domain ${domain_join.domain_name} (once, after the rename, then restarts),
 %{ endif ~}
@@ -14,6 +15,16 @@
 #  3. Renames the computer to "${hostname}" and restarts.
 $ErrorActionPreference = 'Continue'
 New-Item -ItemType Directory -Force -Path 'C:\fsxn' | Out-Null
+
+# C:\fsxn holds scripts that run as SYSTEM (fsxn-map.ps1, and flexcache.ps1 from stack 04):
+# only SYSTEM and Administrators may read or change it (no inherited Users rights).
+$acl = New-Object System.Security.AccessControl.DirectorySecurity
+$acl.SetAccessRuleProtection($true, $false)
+foreach ($sid in 'S-1-5-18', 'S-1-5-32-544') {   # SYSTEM, BUILTIN\Administrators
+    $id = New-Object System.Security.Principal.SecurityIdentifier($sid)
+    $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($id, 'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow')))
+}
+Set-Acl -Path 'C:\fsxn' -AclObject $acl
 
 @'
 # Maps the FSx for ONTAP SMB shares. Log: C:\fsxn\fsxn-map.log
@@ -40,7 +51,8 @@ function Test-Mapped($m) {
 }
 
 $missing      = @($maps | Where-Object { -not (Test-Mapped $_) })
-$passwordDone = Test-Path 'C:\fsxn\administrator-password-set'
+# Domain members don't reuse the domain password for the local Administrator.
+$passwordDone = $domain -or (Test-Path 'C:\fsxn\administrator-password-set')
 $joined       = (-not $domain) -or (Get-CimInstance Win32_ComputerSystem).PartOfDomain
 if ($missing.Count -eq 0 -and $passwordDone -and $joined) { exit 0 }
 

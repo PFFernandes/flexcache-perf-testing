@@ -6,14 +6,16 @@ One instance in the **same private subnet as the FSx for ONTAP** of its side. Ca
 
 **Windows** (`user_data.ps1.tftpl`): a scheduled task `fsxn-map` runs every minute as SYSTEM. It reads
 the AD Admin secret (`ad_secret`) through a Secrets Manager endpoint in the VPC
-(`enable_secrets_endpoint`), sets the local `Administrator` password to the same value once, and maps
+(`enable_secrets_endpoint`), sets the local `Administrator` password to the same value once (workgroup
+only; with `domain_join` it keeps its random one), and maps
 each entry of `smb_mappings` (`share => { drive, server }`) for every user with `New-SmbGlobalMapping`,
 retrying until the share exists. The computer is renamed to `hostname` and restarted. With
 `domain_join` (`{ domain_name, dns_ips, ou }`) an NRPT rule sends the domain's DNS queries to the
 domain controllers, and the task joins the domain into `ou` after the rename, then restarts once
 more before mapping. A mapping's optional `fallback` (the SVM IP) is used while `server` (the SVM's
 DNS name) doesn't resolve. Log:
-`C:\fsxn\fsxn-map.log`. The Instance Connect Endpoint opens RDP (3389) instead of SSH, and the
+`C:\fsxn\fsxn-map.log`. `C:\fsxn` is locked to SYSTEM and Administrators. The IAM policy allows reading
+`ad_secret` only in this account and region. The Instance Connect Endpoint opens RDP (3389) instead of SSH, and the
 `connect_eice` output is the `open-tunnel` command.
 
 The rest of this page describes the Linux client.
