@@ -4,7 +4,7 @@
 # Configured FROM THE ORIGIN EC2 CLIENT (stacks/03-ec2): Terraform sends a script
 # to it with SSM Run Command, and the client calls the ONTAP REST API on both
 # FSx for ONTAP management IPs (Origin locally, Cache over the peering).
-# Nothing has to reach the management IPs from your Mac.
+# Nothing has to reach the management IPs from the operator machine.
 #
 # Needs: both FSx for ONTAP (02-fsxn) and the origin client with SSM (03-ec2).
 

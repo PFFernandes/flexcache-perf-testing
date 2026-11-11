@@ -13,7 +13,7 @@ for `vol_cache`).
 bench-dataset --help
 ```
 
-**Anywhere else** (e.g. your Mac, against a local folder), from the repository root:
+**Anywhere else** (e.g. the operator machine, against a local folder), from the repository root:
 
 ```bash
 python3 -m bench.dataset --help

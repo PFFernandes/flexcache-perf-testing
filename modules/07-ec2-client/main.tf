@@ -8,7 +8,7 @@
 #                  With var.domain_join it also joins the AWS Managed AD (after the rename).
 # The retries matter because the FlexCache (and its share) only appear in stack 04.
 #
-# Access from your Mac, with no internet, NAT or public IP in the VPC:
+# Access from the operator machine, with no internet, NAT or public IP in the VPC:
 #   EC2 Instance Connect Endpoint   SSH (Linux) or an RDP tunnel (Windows)          (enable_eice)
 #   SSM Session Manager             aws ssm start-session --target <id>              (enable_ssm)
 # Both endpoints are per VPC and live in this module, so each side gets its own.

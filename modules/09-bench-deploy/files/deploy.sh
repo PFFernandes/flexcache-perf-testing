@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs on YOUR MAC (Terraform local-exec in modules/09-bench-deploy).
+# Runs on the OPERATOR MACHINE (Terraform local-exec in modules/09-bench-deploy).
 # Packs bench/ and profiles/ from the repository, sends them to one EC2 client with SSM
 # Run Command, waits and prints the client's output (files/remote.sh runs there).
 # Exit code 0 only if the client reports success.

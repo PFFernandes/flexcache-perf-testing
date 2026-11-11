@@ -4,7 +4,7 @@ Creates the FlexCache relationship between the FSx for ONTAP Origin and Cache. C
 `stacks/04-flexcache`.
 
 The AWS FSx API has no cluster peering or FlexCache calls, so they go through the **ONTAP REST
-API** on the two management IPs, which are private. This module doesn't reach them from your Mac:
+API** on the two management IPs, which are private. This module doesn't reach them from the operator machine:
 it runs the configuration **on the origin EC2 client** (`modules/07-ec2-client`), which sees the
 Origin management IP in its own VPC and the Cache one over the peering.
 
@@ -12,7 +12,7 @@ Origin management IP in its own VPC and the Cache one over the peering.
 |---|---|---|
 | 1 | AWS | Secrets Manager interface endpoint in the origin VPC (`create_secrets_endpoint`), HTTPS from the origin VPC only |
 | 2 | AWS | inline policy on the origin client's role: `secretsmanager:GetSecretValue` on the fsxadmin secret only |
-| 3 | your Mac | `files/ssm-run.sh` (Terraform `local-exec`) waits for the client to be online in SSM, sends the script with SSM Run Command and prints its log: `files/flexcache.py` with `AWS-RunShellScript` (Linux), `files/flexcache.ps1` with `AWS-RunPowerShellScript` (Windows) |
+| 3 | operator machine | `files/ssm-run.sh` (Terraform `local-exec`) waits for the client to be online in SSM, sends the script with SSM Run Command and prints its log: `files/flexcache.py` with `AWS-RunShellScript` (Linux), `files/flexcache.ps1` with `AWS-RunPowerShellScript` (Windows) |
 | 4 | origin client | `create`: reads the fsxadmin password from Secrets Manager, then cluster peer → SVM peer → FlexCache volume → (SMB) shares |
 | – | destroy | `delete`: (SMB) shares → FlexCache (unmount, offline, delete) → SVM peer → cluster peer |
 
@@ -35,7 +35,7 @@ names and the secret ARN. Any change to the inputs deletes and recreates the set
 an existing NFS setup keeps its hash and isn't rebuilt by this module's upgrade.
 
 Requirements: the origin client has SSM (`enable_ssm = true` in `stacks/03-ec2`), and `aws`, `bash`
-and `gzip` on your Mac. The Linux client uses only Python 3 and the AWS CLI, both preinstalled on
+and `gzip` on the operator machine. The Linux client uses only Python 3 and the AWS CLI, both preinstalled on
 Amazon Linux 2023. The Windows client uses Windows PowerShell 5.1 and AWS Tools for PowerShell,
 both preinstalled on the Windows AMIs.
 

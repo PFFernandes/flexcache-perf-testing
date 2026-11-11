@@ -1,8 +1,8 @@
 # Test bench delivery: copies the bench (bench/ and profiles/ from this repository) to
 # the Linux EC2 clients, which have no internet and so can't clone the repository.
 #
-# Same pattern as modules/08-ontap-flexcache: Terraform runs files/deploy.sh on YOUR
-# MAC, which packs the folders and sends them to each client with SSM Run Command.
+# Same pattern as modules/08-ontap-flexcache: Terraform runs files/deploy.sh on the
+# OPERATOR MACHINE, which packs the folders and sends them to each client with SSM Run Command.
 # On the client, files/remote.sh unpacks them into /opt/bench, installs the
 # `bench-dataset` command, prints checks (Python, PyYAML, mounts) and runs the tests.
 #
@@ -13,7 +13,7 @@
 # Resources:
 #   terraform_data.deploy["origin" | "cache"]   runs deploy.sh deploy / remove
 #
-# No AWS resources: only SSM Run Command calls, made by the AWS CLI on your Mac.
+# No AWS resources: only SSM Run Command calls, made by the AWS CLI on the operator machine.
 
 locals {
   # Every file that goes into the bundle, relative to source_root, without caches.

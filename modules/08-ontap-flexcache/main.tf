@@ -3,7 +3,7 @@
 #
 # The AWS FSx API has no cluster peering or FlexCache calls, so they go through
 # the ONTAP REST API on the management IPs, which are private. Instead of
-# reaching them from your Mac, Terraform sends files/flexcache.py to the origin
+# reaching them from the operator machine, Terraform sends files/flexcache.py to the origin
 # client with SSM Run Command (files/ssm-run.sh), and the client does:
 #   1. cluster peer   Origin <-> Cache (intercluster LIFs, TCP 11104/11105)
 #   2. SVM peer       svm-cache <-> svm-origin, application flexcache

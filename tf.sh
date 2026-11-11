@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Thin wrapper so every stack is run the same way (run it on your Mac).
+# Thin wrapper so every stack is run the same way (run it on the operator machine).
 #
 #   ./tf.sh <stack> <terraform command> [extra args]
 #

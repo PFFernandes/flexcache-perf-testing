@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs on YOUR MAC (Terraform local-exec in modules/08-ontap-flexcache).
+# Runs on the OPERATOR MACHINE (Terraform local-exec in modules/08-ontap-flexcache).
 # Sends the FlexCache script to the origin EC2 client with SSM Run Command, waits
 # for it to finish and prints its output. Exit code 0 only if the script succeeded.
 #   Linux client (protocol nfs):   flexcache.py  with AWS-RunShellScript

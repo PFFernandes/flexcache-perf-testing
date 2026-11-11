@@ -37,7 +37,7 @@ destroyed, and lets us review it later on a dashboard.
 | G2 | **Performance tests** on the origin, the cache or both (one switch), run by the two EC2 instances: throughput, IOPS and latency (fio), and **file open / close latency on a cold and on a warm cache** (`bench-fileops`). Plus host CPU/memory/network, the latency between the two clusters (ONTAP cluster peer ping) and CloudWatch metrics. |
 | G3 | **Dashboard in AWS** to review any stored run later: all sources on one time axis, events marked, runs compared. Works when the lab is destroyed. |
 | G4 | **Everything kept in AWS:** configurations, test definitions, raw and processed results, so a new lab can repeat any old test. |
-| G5 | **No laptop in the loop:** a test is started from anywhere with AWS access (CLI, console, schedule) and runs to the end on its own. |
+| G5 | **No operator machine in the loop:** a test is started from anywhere with AWS access (CLI, console, schedule) and runs to the end on its own. |
 
 Constraints from the lab as it is today:
 
@@ -143,7 +143,7 @@ Step Functions retry or SSM agent restart doesn't lose a job. `bench stop <run>`
 
 ### 2.3 Starting things
 
-From anywhere with the right IAM role (laptop, CloudShell, CI):
+From anywhere with the right IAM role (workstation, CloudShell, CI):
 
 ```bash
 bench dataset create --spec mixed-500g                      # starts bench-dataset
@@ -253,7 +253,7 @@ attachment** = Tooling, and Observe is its own part with its own switch (`deploy
 
 The clients have no internet, so they can't clone the repository. `stacks/05-bench` calls
 `modules/09-bench-deploy`, which works like the FlexCache module: Terraform runs a script on the
-Mac that packs `bench/` and `profiles/` and sends them over SSM Run Command to each Linux client.
+operator machine that packs `bench/` and `profiles/` and sends them over SSM Run Command to each Linux client.
 The client unpacks them into `/opt/bench`, records the Git commit in `/opt/bench/VERSION.json`,
 installs the `bench-dataset` command and runs the bench's tests. Any change to the files re-deploys
 on the next apply; nothing is sent otherwise.

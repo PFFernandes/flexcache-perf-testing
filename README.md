@@ -7,7 +7,7 @@ test client on each side, and connects the two file systems with **FlexCache**.
 - **Origin, Cache or both:** two switches in `common.tfvars`.
 - **NFS or SMB:** `protocol` in `common.tfvars`. NFS (default) uses Linux clients; SMB adds an AWS
   Managed Microsoft AD, Windows clients and the shares `origin` and `cache`.
-- **Runs from your Mac:** the Terraform state stays there. There is no bastion host and no VPN; the
+- **Runs from one operator machine** (Linux or macOS): the Terraform state stays there. There is no bastion host and no VPN; the
   VPCs have no internet access, NAT gateway or public IPs.
 - **FlexCache is configured from the origin client:** Terraform sends it a script with SSM
   Run Command, and the client creates the cluster peer, SVM peer and FlexCache volume through the
@@ -22,7 +22,7 @@ test client on each side, and connects the two file systems with **FlexCache**.
 <summary>Text version of the diagram</summary>
 
 ```
-  YOUR MAC  ── terraform, aws cli, local state
+  OPERATOR MACHINE  ── terraform, aws cli, local state
      │  AWS APIs (all stacks), SSM Run Command (stack 04)
      │  login to the clients: EC2 Instance Connect or SSM
      ▼
@@ -58,16 +58,21 @@ FlexCache configuration and share mapping) have not been executed anywhere.
 
 ## Run the whole lab, step by step
 
-Everything below runs on your Mac, from the repository folder.
+Everything below runs on the operator machine, from the repository folder (see
+[Operator machine](#operator-machine) for the tools).
 
 ### 1. Get the code and the tools
 
 ```bash
 git clone https://github.com/PFFernandes/flexcache-perf-testing.git
 cd flexcache-perf-testing
-brew install hashicorp/tap/terraform awscli
-brew install --cask session-manager-plugin      # only for SSM logins to the EC2 clients
 ```
+
+Install Terraform ≥ 1.10, the AWS CLI v2 and, for SSM logins to the EC2 clients, the Session
+Manager plugin, with your platform's package manager or the vendors' installers:
+[Terraform](https://developer.hashicorp.com/terraform/install),
+[AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html),
+[Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html).
 
 ### 2. Log in to AWS
 
@@ -238,12 +243,12 @@ appears once step 4 has created the FlexCache volume (the client retries every m
 ## How FlexCache is configured (stack 04)
 
 The AWS FSx API has no cluster peering or FlexCache calls; they exist only in the ONTAP REST API on
-each file system's **management IP**, which is private. So nothing has to reach those IPs from your
-Mac: the **origin EC2 client** does the work.
+each file system's **management IP**, which is private. So nothing has to reach those IPs from the
+operator machine: the **origin EC2 client** does the work.
 
 1. `terraform apply` creates a **Secrets Manager endpoint** in the origin VPC and lets the origin
    client's role read the fsxadmin secret.
-2. It then runs `modules/08-ontap-flexcache/files/ssm-run.sh` on your Mac, which sends the script
+2. It then runs `modules/08-ontap-flexcache/files/ssm-run.sh` on the operator machine, which sends the script
    to the origin client with **SSM Run Command** and waits for it: `files/flexcache.py` on Linux
    (NFS), `files/flexcache.ps1` on Windows (SMB). Both do the same steps.
 3. On the client, the script reads the fsxadmin password from Secrets Manager (it is never part of
@@ -284,7 +289,7 @@ On each client this:
 - installs the `bench-dataset` command for every user;
 - prints checks (Python version, PyYAML, mounts and free space) and runs the bench's tests.
 
-**Updating:** change the code on your Mac, then `plan` and `apply-plan` again. Only a change to the
+**Updating:** change the code on the operator machine, then `plan` and `apply-plan` again. Only a change to the
 files (or to the stack's settings) sends anything; otherwise the plan shows no changes. What is
 deployed is the working copy, committed or not, so check `uncommitted_changes` in the output.
 
@@ -390,16 +395,20 @@ protocol = "nfs" # default; "smb" for Windows and SMB shares
 - **Each Windows client gets a Secrets Manager endpoint** in its VPC, so stack 04 doesn't create a
   second one in the origin VPC.
 
-## Your Mac
+## Operator machine
 
-- **Tools:** `brew install hashicorp/tap/terraform awscli` (Terraform ≥ 1.10, AWS CLI v2). For SSM
-  logins also `brew install --cask session-manager-plugin`. `bash` and `gzip` come with macOS.
+The one machine you run Terraform from: a workstation, a jump host or a CI runner, Linux or macOS.
+It holds the Terraform state, so use the same machine for the whole life of a lab.
+
+- **Tools:** Terraform ≥ 1.10 (or OpenTofu, `TF_BIN=tofu`), AWS CLI v2, `bash`, `gzip`, `tar`,
+  `base64` and `git`. For SSM logins also the Session Manager plugin. Installation:
+  [step 1](#1-get-the-code-and-the-tools).
 - **AWS credentials:** `export AWS_PROFILE=<profile>`. The profile must be able to create VPCs,
   peering, FSx for ONTAP, EC2 instances and endpoints, IAM roles and policies and Secrets Manager
   secrets, and to use SSM Run Command (`ssm:SendCommand`, `ssm:GetCommandInvocation`). In a sandbox
   account `AdministratorAccess` is simplest (`PowerUserAccess` can't create the IAM role).
 - **Every stack only calls AWS APIs**, so all of them work from anywhere with internet. Nothing
-  connects from your Mac into the VPCs except your logins through the endpoints.
+  connects from the operator machine into the VPCs except your logins through the endpoints.
 
 ## The EC2 clients
 
@@ -421,7 +430,7 @@ both write to it:
 Default NFS options: `vers=3,nconnect=8,hard,timeo=600,retrans=2,rsize=1048576,wsize=1048576`
 (change with `nfs_options`). The origin client also runs the FlexCache configuration (stack 04).
 
-Log in from your Mac (the exact commands are in `./tf.sh 03-ec2 output`):
+Log in from the operator machine (the exact commands are in `./tf.sh 03-ec2 output`):
 
 ```bash
 aws ec2-instance-connect ssh --instance-id <id> --connection-type eice   # EC2 Instance Connect Endpoint
@@ -458,7 +467,7 @@ Every AWS resource gets two tags: `Creator` (from `creator`, set through the pro
 
 ## State and the fsxadmin password
 
-Each stack writes `stacks/<stack>/terraform.tfstate` on your Mac (git-ignored). It contains the
+Each stack writes `stacks/<stack>/terraform.tfstate` on the operator machine (git-ignored). It contains the
 generated fsxadmin password, so never commit it.
 
 - **One fsxadmin password** for both FSx for ONTAP: `02-fsxn` generates it and stores it in the
@@ -468,7 +477,7 @@ generated fsxadmin password, so never commit it.
   `<creator>-<project>/ad-admin` (origin region, replicated to a different `cache_region`). It is
   also in the stack 01 state file.
 - **Keep the state files.** Destroy the lab before you delete the clone, and back the `*.tfstate`
-  files up (e.g. Time Machine). Without them Terraform no longer knows what it created.
+  files up with your usual backup. Without them Terraform no longer knows what it created.
 - Moving to S3 later is a one-file change per stack (`backend.tf`) plus `terraform init -migrate-state`.
 
 ## Destroy

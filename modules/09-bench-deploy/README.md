@@ -4,7 +4,7 @@ Copies the test bench (`bench/` and `profiles/` from this repository) to the Lin
 checks that it works there. The clients have no internet, so they can't clone the repository.
 Called by `stacks/05-bench`.
 
-Same pattern as `08-ontap-flexcache`: Terraform runs `files/deploy.sh` **on your Mac**, which packs
+Same pattern as `08-ontap-flexcache`: Terraform runs `files/deploy.sh` **on the operator machine**, which packs
 the folders, sends them to each client with SSM Run Command (`AWS-RunShellScript`) and waits. On the
 client, `files/remote.sh` runs as root:
 
@@ -39,5 +39,5 @@ module.
 
 Outputs: `bench_home`, `bundle_sha256`, `file_count`, `deployed_to`.
 
-Needs on your Mac: `bash`, `tar`, `base64`, `git` (for the version record) and the AWS CLI with
+Needs on the operator machine: `bash`, `tar`, `base64`, `git` (for the version record) and the AWS CLI with
 `ssm:SendCommand`, `ssm:GetCommandInvocation`, `ssm:DescribeInstanceInformation`.

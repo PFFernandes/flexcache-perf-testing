@@ -32,7 +32,7 @@ write; a stricter mode set by hand is put back to `1777` on the next run.
 | origin | `vol_origin` → `/mnt/fsxn/vol_origin` (write the data set) |
 | cache | `vol_cache` (FlexCache) → `/mnt/fsxn/vol_cache`; with `cache_mounts_origin = true` also `vol_origin` over the peering as a no-cache baseline |
 
-**Access from your Mac** – no public IP, no internet gateway, no NAT:
+**Access from the operator machine** – no public IP, no internet gateway, no NAT:
 - **EC2 Instance Connect** (`enable_eice`, free): an endpoint in the subnet; only it may SSH to the client.
   `aws ec2-instance-connect ssh --instance-id <id> --connection-type eice`
 - **SSM Session Manager** (`enable_ssm`): `ssm`, `ssmmessages`, `ec2messages` interface endpoints
