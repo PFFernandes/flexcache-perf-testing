@@ -1,0 +1,11 @@
+# Optional: copy to terraform.tfvars.
+
+# Which clients of stacks/03-ec2 get the bench (a side without a client is skipped).
+bench_clients = ["origin", "cache"]
+
+# Extra Amazon Linux packages, installed with dnf through the S3 endpoint.
+# python3-pyyaml lets the clients read .yaml dataset specs (.json always works).
+install_packages = []
+
+# Run the bench's own tests on each client after every deploy (a few seconds, offline).
+run_tests = true

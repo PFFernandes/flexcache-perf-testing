@@ -343,14 +343,15 @@ def _sizing(p) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="bench dataset", description=__doc__.strip().splitlines()[0])
-    parser.add_argument("--out", default="results/datasets", help="where dataset records are kept (default: %(default)s)")
+    parser.add_argument("--out", default=os.environ.get("BENCH_OUT", "results/datasets"),
+                        help="where dataset records are kept (default: $BENCH_OUT or results/datasets; now %(default)s)")
     sub = parser.add_subparsers(dest="command", required=True)
 
     for name, func, text in (("plan", cmd_plan, "show what a spec would create, without writing"),
                              ("create", cmd_create, "write a new dataset")):
         p = sub.add_parser(name, help=text)
         p.set_defaults(func=func)
-        p.add_argument("--spec", help="spec file (.yaml or .json); flags below override it")
+        p.add_argument("--spec", help="spec file (.json or .yaml), or a name from profiles/datasets (e.g. smoke); flags override it")
         p.add_argument("--name", help="dataset name")
         _sizing(p)
         p.add_argument("--target", required=(name == "create"),

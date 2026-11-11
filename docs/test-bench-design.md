@@ -1,6 +1,6 @@
 # Test bench framework – design
 
-Status: **draft v6 for review**. Nothing here is implemented yet.
+Status: **draft v7 for review**. Nothing here is implemented yet.
 
 The Terraform stacks build the lab (Origin, Cache, two EC2 instances, FlexCache). The test bench is
 the layer on top: it fills the volumes with datasets, runs read/write and file open/close tests from
@@ -12,8 +12,9 @@ destroyed, and lets us review it later on a dashboard.
 | v2 | Tests driven inside AWS (Step Functions), run by the EC2 instances; per-file open/close latency (`bench-fileops`); results in S3 + Athena. |
 | v3 | Decisions recorded (§0). **OpenTelemetry** as the telemetry pipeline, **NetApp Harvest** for ONTAP metrics, dashboard **without IAM Identity Center** (§7). Only the two existing EC2 instances; NFS v3 **and** v4.1; cross-region in scope from the start; review after the fact first, live view later. |
 | v4 | After a design review: test questions first (§1.1); measurement-validity rules (§5.6); honest cold/warm definitions; run lock, pre-flight, cleanup, dry-run (§2.4); no S3 replication; read-only ONTAP user; review Grafana without a public IP; phases reordered so the first numbers come before the platform (§9). |
-| v5 | The bench platform is an **optional last stack**, `05-bench-platform`, built after stacks 01-04 (§2.5). It installs the bench onto the workers itself, so stacks 01-04 work unchanged without it. |
+| v5 | The bench platform is an **optional last stack**, `05-bench`, built after stacks 01-04 (§2.5). It installs the bench onto the workers itself, so stacks 01-04 work unchanged without it. |
 | v6 | The bench is organised as **four modules**: Dataset, Tooling, Run, Observe (§2.6). Results are saved in a store that is separate from Observe, so Observe can be deleted, recreated and attached to saved results later. |
+| v7 | Built: module 1 (Dataset, `bench/dataset`) and delivery to the clients: `modules/09-bench-deploy` + `stacks/05-bench` (§2.7). Module numbers follow the repository today (`07-ec2-client`, `08-ontap-flexcache`), so the bench's Terraform modules start at 09. |
 
 ## 0. Decisions so far
 
@@ -25,7 +26,7 @@ destroyed, and lets us review it later on a dashboard.
 | Cross-region | **Planned.** Built into the platform from phase 1. |
 | Priority | **Review results after the fact** is the priority. Live indicators during a run: nice to have, later. |
 | Identity Center | Not available → no Amazon Managed Grafana. Dashboard choice in §7, **to decide**. |
-| Platform stack | **`05-bench-platform`, applied after 01-04, only if wanted** (`deploy_bench = true`). The lab works without it. Its data survives a lab teardown (§2.5). |
+| Platform stack | **`05-bench`, applied after 01-04, only if wanted** (`deploy_bench = true`). The lab works without it. Its data survives a lab teardown (§2.5). |
 | Home account / region | Assumption: the lab's AWS account, origin region. |
 
 ## 1. Goals and constraints
@@ -72,7 +73,7 @@ round. Anything that answers none of them is not built. **Draft list, to confirm
 
 Two layers with different lifetimes:
 
-- **Bench platform** (stack `05-bench-platform`, the optional last stack, home region; its data is persistent, §2.5): S3 store, Step
+- **Bench platform** (stack `05-bench`, the optional last stack, home region; its data is persistent, §2.5): S3 store, Step
   Functions, a few Lambda functions, Glue/Athena tables, the review dashboard (§7). Serverless
   except the dashboard, which only runs while someone looks at it.
 - **Lab** (stacks 01-04, per campaign): FSx for ONTAP, FlexCache and the two **workers** running
@@ -174,7 +175,7 @@ an EventBridge Scheduler schedule.
 ### 2.5 Where the platform sits in the stack order
 
 ```
-stacks:   01-landing-zone ──► 02-fsxn ──► 03-ec2 ──► 04-flexcache ──► 05-bench-platform (optional)
+stacks:   01-landing-zone ──► 02-fsxn ──► 03-ec2 ──► 04-flexcache ──► 05-bench (optional)
 ```
 
 - **Optional.** `deploy_bench = false` (the default in `common.tfvars`) and stack 05 is simply not
@@ -193,13 +194,13 @@ stacks:   01-landing-zone ──► 02-fsxn ──► 03-ec2 ──► 04-flexca
 - **Tearing a lab down** is the one place the "highest number first" rule changes:
 
   ```bash
-  ./tf.sh 05-bench-platform detach     # removes only the lab attachment; store and engine stay
+  ./tf.sh 05-bench detach     # removes only the lab attachment; store and engine stay
   ./tf.sh 04-flexcache destroy         # then 03, 02, 01 as usual
   ```
 
-  A new lab later: apply 01-04, then `./tf.sh 05-bench-platform apply` attaches the bench to the
+  A new lab later: apply 01-04, then `./tf.sh 05-bench apply` attaches the bench to the
   new workers. All earlier dataset specs, runs and dashboards are still there.
-- **Removing everything** (`./tf.sh 05-bench-platform destroy`) removes engine and attachment but
+- **Removing everything** (`./tf.sh 05-bench destroy`) removes engine and attachment but
   stops at the buckets; deleting the results is a separate, explicit step.
 - Reviewing old runs (`bench review`) needs only the store and engine, not a lab.
 
@@ -247,6 +248,19 @@ depends on nothing but the store.
 
 In stack 05 the parts of §2.5 map to the modules: **Store** = results store, **Engine** + **lab
 attachment** = Tooling, and Observe is its own part with its own switch (`deploy_observe`).
+
+### 2.7 Delivery to the clients (built)
+
+The clients have no internet, so they can't clone the repository. `stacks/05-bench` calls
+`modules/09-bench-deploy`, which works like the FlexCache module: Terraform runs a script on the
+Mac that packs `bench/` and `profiles/` and sends them over SSM Run Command to each Linux client.
+The client unpacks them into `/opt/bench`, records the Git commit in `/opt/bench/VERSION.json`,
+installs the `bench-dataset` command and runs the bench's tests. Any change to the files re-deploys
+on the next apply; nothing is sent otherwise.
+
+This is the first piece of stack 05. The store, engine and Observe parts of §2.5 are added to the
+same stack later, as `modules/10-…` onwards. The bundle travels inside one SSM command (limit
+~60 KB); once Tooling brings the S3 store, delivery moves to S3 and the limit goes away.
 
 ## 3. Concepts and identifiers
 
@@ -563,7 +577,7 @@ Latency has three independent views: **client** (fio, fileops, NFS mountstats), 
 
 ### 6.1 S3 store
 
-One bucket from `05-bench-platform` in the home region: versioning on, SSE-S3, public access
+One bucket from `05-bench` in the home region: versioning on, SSE-S3, public access
 blocked, no expiry.
 
 ```
@@ -616,7 +630,7 @@ table and can be plotted against each other.
 ### 6.3 Re-spinning a lab
 
 ```bash
-# build the lab as usual (stacks 01-04), then ./tf.sh 05-bench-platform apply: attaches the bench to the new workers
+# build the lab as usual (stacks 01-04), then ./tf.sh 05-bench apply: attaches the bench to the new workers
 bench lab check                                            # discover-lab + agents online + mounts + NFS v3/v4.1 OK
 bench dataset create --from ds-mixed-500g-20261110-1415    # same spec + seed = same files
 bench run --rerun run-20261110T1432Z-open-latency-7f3a     # same suite on the new lab
@@ -767,18 +781,19 @@ bench/
   observe/                   4  finalize (raw → tables), attach / detach, report
     dashboards/              Grafana dashboard JSON
 profiles/                    datasets/, workloads/, suites/   (published to the store)
-modules/08-bench-store/      Terraform: S3 buckets (prevent_destroy)
-modules/09-bench-tooling/    Terraform: engine, IAM, worker attachment over SSM
-modules/10-bench-observe/    Terraform: Glue/Athena, review Grafana
-stacks/05-bench-platform/    calls 08, 09, 10 (switches: deploy_bench, deploy_observe)
+modules/09-bench-deploy/     Terraform: delivery to the clients over SSM (built)
+modules/10-bench-store/      Terraform: S3 buckets (prevent_destroy)
+modules/11-bench-tooling/    Terraform: engine, IAM, worker attachment over SSM
+modules/12-bench-observe/    Terraform: Glue/Athena, review Grafana
+stacks/05-bench/             calls 09, 10, 11, 12 (switches: deploy_bench, deploy_observe)
 ```
 
 Changes to the existing lab:
 
 | Where | Change |
 |---|---|
-| `stacks/05-bench-platform` (new) | Everything in the platform box. Optional, applied after 01-04 (`deploy_bench`). Store, engine and lab attachment as in §2.5; `detach` before a lab teardown. Takes both regions (home + cache) for the staging bucket. IAM: a `bench-operator` role (start/stop runs, review) and a `bench-reader` role (review only); the Step Functions role may send SSM commands **only** to instances tagged `BenchLab` and only the `bench-agent` document. |
-| `modules/06-ec2-client` | Only lab-generic changes: `monitoring = true` (EC2 detailed monitoring), output the role name. Everything bench-specific (tags, bucket IAM policy, `fio`, `sysstat`, `gcc`, otelcol-contrib, node_exporter, Harvest, `bench-agent`, `fileops`) is added by stack 05 over SSM, so the module works unchanged without the bench. |
+| `stacks/05-bench` (new) | Everything in the platform box. Optional, applied after 01-04 (`deploy_bench`). Store, engine and lab attachment as in §2.5; `detach` before a lab teardown. Takes both regions (home + cache) for the staging bucket. IAM: a `bench-operator` role (start/stop runs, review) and a `bench-reader` role (review only); the Step Functions role may send SSM commands **only** to instances tagged `BenchLab` and only the `bench-agent` document. |
+| `modules/07-ec2-client` | Only lab-generic changes: `monitoring = true` (EC2 detailed monitoring), output the role name. Everything bench-specific (tags, bucket IAM policy, `fio`, `sysstat`, `gcc`, otelcol-contrib, node_exporter, Harvest, `bench-agent`, `fileops`) is added by stack 05 over SSM, so the module works unchanged without the bench. |
 | `stacks/03-ec2` | Default `cache_mounts_origin = true` (needed for `cache-direct`). Bigger default instance type for real numbers (e.g. `c6in.xlarge`); the bench flags runs on burstable types (`t3`). |
 | `stacks/04-flexcache` | Keep `flexcache.py` on the origin worker so the agent can recreate the FlexCache. Later: `flexcache_writeback = false` option (§0). |
 | `stacks/02-fsxn` | Check / enable NFS v4.1 on both SVMs (phase 0). `vol_origin` tiering policy explicit, default `NONE`. |

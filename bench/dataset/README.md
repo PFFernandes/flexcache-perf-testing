@@ -4,11 +4,22 @@ Creates the files the performance tests read and change. Standard-library Python
 runs unchanged on the Amazon Linux 2023 clients. Design: [docs/test-bench-design.md](../../docs/test-bench-design.md) §4.
 
 Run it **on the machine that has the volume mounted** (origin client for `vol_origin`, cache client
-for `vol_cache`), from the repository root:
+for `vol_cache`).
+
+**On the EC2 clients** it is installed by `stacks/05-bench` (see the top-level README) as the
+`bench-dataset` command, usable from any folder:
+
+```bash
+bench-dataset --help
+```
+
+**Anywhere else** (e.g. your Mac, against a local folder), from the repository root:
 
 ```bash
 python3 -m bench.dataset --help
 ```
+
+The examples below use `bench-dataset`; `python3 -m bench.dataset` takes the same arguments.
 
 ## Create
 
@@ -16,12 +27,12 @@ Give **any two** of file count, file size and total size; the third is worked ou
 
 ```bash
 T=/mnt/fsxn/vol_origin
-python3 -m bench.dataset create --target $T --files 100000 --file-size 64KiB
-python3 -m bench.dataset create --target $T --total 200GiB --file-size 1GiB
-python3 -m bench.dataset create --target $T --total 500GiB --file-size 1MiB-64MiB
-python3 -m bench.dataset create --target $T --total 500GiB --size-mix "70:4KiB-64KiB,25:1MiB-16MiB,5:1GiB"
-python3 -m bench.dataset create --target $T --spec profiles/datasets/smoke.json
-python3 -m bench.dataset plan   --spec profiles/datasets/smoke.json      # show the plan, write nothing
+bench-dataset create --target $T --files 100000 --file-size 64KiB
+bench-dataset create --target $T --total 200GiB --file-size 1GiB
+bench-dataset create --target $T --total 500GiB --file-size 1MiB-64MiB
+bench-dataset create --target $T --total 500GiB --size-mix "70:4KiB-64KiB,25:1MiB-16MiB,5:1GiB"
+bench-dataset create --target $T --spec smoke
+bench-dataset plan   --spec smoke      # show the plan, write nothing
 ```
 
 - Files go to `<target>/<dataset-id>/`; the id is `ds-<name>-<utc time>` unless `--id` is given.
@@ -30,7 +41,8 @@ python3 -m bench.dataset plan   --spec profiles/datasets/smoke.json      # show 
 - `--side cache --target /mnt/fsxn/vol_cache` writes a new dataset through the cache instead.
 - Create refuses to start without enough free space plus 10 % (`--force` overrides), and
   `--resume` continues an interrupted create.
-- Spec files: `.json` always works; `.yaml` needs PyYAML on the machine.
+- `--spec` takes a file path or a name from `profiles/datasets/` (`--spec smoke`).
+- Spec files: `.json` always works; `.yaml` needs PyYAML on the machine (`install_packages` in stack 05).
 
 Other settings: `--jobs` (parallel writer processes), `--block-size`, `--files-per-dir`, `--depth`,
 `--checksums none|sample|all` (sample = 1 file in 100), `--fsync`.
@@ -42,25 +54,26 @@ Each modify is a numbered generation with its own manifest. `--side` records whe
 
 ```bash
 C=/mnt/fsxn/vol_cache
-python3 -m bench.dataset modify <id> --side cache --target $C --mode overwrite --percent 10 --bytes 1MiB
-python3 -m bench.dataset modify <id> --side cache --target $C --mode append    --percent 5  --bytes 1MiB
-python3 -m bench.dataset modify <id> --side cache --target $C --mode metadata  --percent 2  --ops rename,chmod,delete
-python3 -m bench.dataset modify <id> --side cache --target $C --mode create    --total 50GiB --file-size 4MiB
+bench-dataset modify <id> --side cache --target $C --mode overwrite --percent 10 --bytes 1MiB
+bench-dataset modify <id> --side cache --target $C --mode append    --percent 5  --bytes 1MiB
+bench-dataset modify <id> --side cache --target $C --mode metadata  --percent 2  --ops rename,chmod,delete
+bench-dataset modify <id> --side cache --target $C --mode create    --total 50GiB --file-size 4MiB
 ```
 
 ## Verify, list, delete
 
 ```bash
-python3 -m bench.dataset verify <id> --side origin --target /mnt/fsxn/vol_origin   # sizes + checksums
-python3 -m bench.dataset list
-python3 -m bench.dataset delete <id> --yes          # removes the files, keeps the records
+bench-dataset verify <id> --side origin --target /mnt/fsxn/vol_origin   # sizes + checksums
+bench-dataset list
+bench-dataset delete <id> --yes          # removes the files, keeps the records
 ```
 
 Verifying on the origin after a cache-side modify checks that the change arrived there.
 
 ## What it records
 
-In `results/datasets/<dataset-id>/` (change with `--out`, which goes **before** the command):
+In `~/bench-results/datasets/<dataset-id>/` with `bench-dataset`, `results/datasets/<dataset-id>/` with
+`python3 -m bench.dataset` (change with `$BENCH_OUT`, or `--out`, which goes **before** the command):
 
 | File | Content |
 |---|---|

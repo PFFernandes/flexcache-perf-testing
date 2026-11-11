@@ -31,8 +31,29 @@ class SpecError(ValueError):
     pass
 
 
+def find_spec(name: str) -> str:
+    """A spec path as given, or a profile name: 'smoke' -> profiles/datasets/smoke.json.
+
+    Looks in the current folder, then in $BENCH_HOME (set by the bench-dataset command
+    on the clients), trying the name as a path and under profiles/datasets/ with
+    .json, .yaml and .yml.
+    """
+    roots = [os.getcwd()]
+    if os.environ.get("BENCH_HOME"):
+        roots.append(os.environ["BENCH_HOME"])
+    tried = []
+    for root in roots:
+        for rel in (name, os.path.join("profiles", "datasets", name)):
+            for ext in ("", ".json", ".yaml", ".yml"):
+                path = os.path.join(root, rel + ext)
+                tried.append(path)
+                if os.path.isfile(path):
+                    return path
+    raise SpecError(f"spec {name!r} not found (looked for {', '.join(tried[:4])}, ...)")
+
+
 def load_file(path: str) -> dict:
-    """Read a spec file. JSON always works; YAML needs PyYAML (present on Amazon Linux 2023)."""
+    """Read a spec file. JSON always works; YAML needs PyYAML."""
     with open(path) as fh:
         text = fh.read()
     if path.endswith(".json"):
@@ -160,7 +181,7 @@ def normalize(raw: dict) -> dict:
 
 def from_args(args) -> dict:
     """Build the raw spec from --spec and/or the sizing flags (flags win over the file)."""
-    raw = load_file(args.spec) if getattr(args, "spec", None) else {}
+    raw = load_file(find_spec(args.spec)) if getattr(args, "spec", None) else {}
     raw = json.loads(json.dumps(raw))  # deep copy
     size = raw.setdefault("size", {})
     if getattr(args, "spec", None) and not raw.get("name"):

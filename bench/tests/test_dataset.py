@@ -210,6 +210,28 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("not enough free space", text)
 
+    def test_spec_by_name_and_bench_out(self):
+        here = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        old = {k: os.environ.get(k) for k in ("BENCH_HOME", "BENCH_OUT")}
+        cwd = os.getcwd()
+        try:
+            os.environ["BENCH_HOME"] = here
+            os.environ["BENCH_OUT"] = self.out
+            os.chdir(self.tmp.name)            # not the repository: the name must come from BENCH_HOME
+            from bench.dataset.cli import build_parser
+            self.assertEqual(build_parser().parse_args(["list"]).out, self.out)
+            code, text = run("plan", "--spec", "smoke")
+            self.assertEqual(code, 0, text)
+            self.assertIn("files      200", text)
+            self.assertEqual(run("plan", "--spec", "no-such-spec")[0], 2)
+        finally:
+            os.chdir(cwd)
+            for k, v in old.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+
     def test_spec_file_and_plan(self):
         here = os.path.dirname(__file__)
         smoke = os.path.join(here, "..", "..", "profiles", "datasets", "smoke.json")

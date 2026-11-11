@@ -48,6 +48,7 @@ test client on each side, and connects the two file systems with **FlexCache**.
 | `02-fsxn` | FSx for ONTAP Origin and Cache, shared fsxadmin secret | ✅ ready |
 | `03-ec2` | Test client on the Origin and/or Cache (Linux for NFS, Windows for SMB) | ✅ ready |
 | `04-flexcache` | Cluster peer, SVM peer, FlexCache volume, SMB shares (run on the origin client) | ✅ ready |
+| `05-bench` (optional) | Test bench copied to the Linux clients: `bench-dataset` command ([Test bench](#test-bench-stack-05)) | 🧪 not yet run on AWS |
 | SMB option | Managed AD (01), domain-joined SVMs (02), Windows clients (03), shares (04) | 🧪 not yet run on AWS |
 
 The NFS lab has been deployed on AWS. Every stack passes `terraform validate` and offline tests with
@@ -114,6 +115,7 @@ or apply first prints the settings files it loaded, so check the regions there.
 | 2 | `./tf.sh 02-fsxn init`<br>`./tf.sh 02-fsxn plan`<br>`./tf.sh 02-fsxn apply-plan` | FSx for ONTAP Origin + Cache, SVMs, `vol_origin`, fsxadmin secret | 20-40 min, billed hourly |
 | 3 | `./tf.sh 03-ec2 init`<br>`./tf.sh 03-ec2 plan`<br>`./tf.sh 03-ec2 apply-plan` | origin and cache EC2 clients (Windows for SMB), Instance Connect + SSM endpoints | ~5 min; Windows ~10 min |
 | 4 | `./tf.sh 04-flexcache init`<br>`./tf.sh 04-flexcache plan`<br>`./tf.sh 04-flexcache apply-plan` | Secrets Manager endpoint, then on the origin client: cluster peer, SVM peer, `vol_cache`; SMB: shares `origin` and `cache` | ~5-10 min |
+| 5 (optional) | `./tf.sh 05-bench init`<br>`./tf.sh 05-bench plan`<br>`./tf.sh 05-bench apply-plan` | Test bench on the Linux clients: `/opt/bench` and the `bench-dataset` command (NFS only) | ~1 min |
 
 During step 4 the apply prints the log of the origin client, e.g.
 `[flexcache] creating cluster peer ...`, `SVM peer state: peered`, `FlexCache vol_cache created`.
@@ -172,15 +174,21 @@ When you're done (FSx for ONTAP is billed every hour), destroy in reverse order.
 │   ├── 05-fsxn-origin/        FSx for ONTAP Origin: file system, SVM, vol_origin, security group
 │   ├── 06-fsxn-cache/         FSx for ONTAP Cache: file system, SVM, security group
 │   ├── 07-ec2-client/         Linux (NFS mounts) or Windows (SMB drives) client, Instance Connect + SSM endpoints
-│   └── 08-ontap-flexcache/    FlexCache setup run on the origin client (SSM + ONTAP REST script, shares for SMB)
+│   ├── 08-ontap-flexcache/    FlexCache setup run on the origin client (SSM + ONTAP REST script, shares for SMB)
+│   └── 09-bench-deploy/       copies the test bench to the Linux clients over SSM
 ├── stacks/                    what you deploy, one local state file each
 │   ├── 01-landing-zone/
 │   ├── 02-fsxn/
 │   ├── 03-ec2/
-│   └── 04-flexcache/
+│   ├── 04-flexcache/
+│   └── 05-bench/              optional: the test bench on the clients
+├── bench/                     test bench code (Python, standard library only)
+│   ├── dataset/               module 1: create, modify, verify and delete datasets
+│   └── tests/
+├── profiles/datasets/         dataset specs (smoke, small files, large files, mixed)
+├── docs/test-bench-design.md  design of the whole test bench
 ├── scripts/
 │   ├── init-tfvars.sh         creates common.tfvars + every stack's terraform.tfvars
-│   ├── origin/                dataset generation (planned)
 │   └── cache/                 read benchmark (planned)
 ├── common.tfvars.example      settings shared by every stack
 └── tf.sh                      wrapper: ./tf.sh <stack> <command>
@@ -196,10 +204,11 @@ Stacks and modules are numbered in the order they are created. A number only dep
 numbers, so deploy from `01` upwards and destroy from the highest number down.
 
 ```
-stacks:   01-landing-zone ──► 02-fsxn ──► 03-ec2 ──► 04-flexcache
+stacks:   01-landing-zone ──► 02-fsxn ──► 03-ec2 ──► 04-flexcache ──► 05-bench (optional)
 
 modules:  01-network-origin ──┐                                 ┌──► 05-fsxn-origin ──┐
                               ├──► 03-peering ──► 04-managed-ad ─┤                     ├──► 07-ec2-client ──► 08-ontap-flexcache
+                                                                                                         └──► 09-bench-deploy
           02-network-cache  ──┘                    (smb only)    └──► 06-fsxn-cache  ──┘
 ```
 
@@ -209,6 +218,7 @@ modules:  01-network-origin ──┐                                 ┌──�
 | 02 | `02-fsxn` | 01: VPCs, subnets, CIDRs, Managed AD (SMB) | `05-fsxn-origin`, `06-fsxn-cache` |
 | 03 | `03-ec2` | 01: subnets, AD Admin secret (SMB) · 02: SVM NFS IPs / SMB names, junction paths | `07-ec2-client` |
 | 04 | `04-flexcache` | 01: origin VPC · 02: management/intercluster IPs, SVMs, fsxadmin secret · 03: origin client | `08-ontap-flexcache` |
+| 05 | `05-bench` (optional) | 03: Linux clients and their regions | `09-bench-deploy` |
 
 | # | Module | Side | Needs |
 |---|---|---|---|
@@ -220,6 +230,7 @@ modules:  01-network-origin ──┐                                 ┌──�
 | 06 | `06-fsxn-cache` | Cache | 02: VPC and subnet · 03 · the Origin it caches (05) · 04: domain (SMB) |
 | 07 | `07-ec2-client` | both | 01/02: the FSx for ONTAP subnet · 05/06: SVM NFS IP or SMB name |
 | 08 | `08-ontap-flexcache` | both | 05 + 06: management/intercluster IPs, SVMs, origin volume · 07: the origin client runs it |
+| 09 | `09-bench-deploy` | both | 07: Linux clients with SSM |
 
 The cache client's `/mnt/fsxn/vol_cache` (or `X:` for SMB) is configured in step 3 but only
 appears once step 4 has created the FlexCache volume (the client retries every minute).
@@ -253,6 +264,42 @@ Every step checks what already exists, so re-running is safe. Changing a FlexCac
 (name, size, path, aggregates) deletes and recreates the FlexCache setup. The origin client needs
 SSM (`enable_ssm = true` in `03-ec2`, the default); stack 04 stops with a clear message otherwise.
 
+## Test bench (stack 05)
+
+The test bench ([design](docs/test-bench-design.md)) lives in `bench/` and `profiles/`. The clients
+have no internet and can't clone this repository, so stack 05 copies those folders to them over
+SSM, the same way stack 04 sends the FlexCache script. It is optional and works only with
+`protocol = "nfs"` (Linux clients).
+
+```bash
+./tf.sh 05-bench init
+./tf.sh 05-bench plan
+./tf.sh 05-bench apply-plan
+```
+
+On each client this:
+
+- unpacks the bench into `/opt/bench`, with `/opt/bench/VERSION.json` recording the Git commit,
+  branch, whether there were uncommitted changes, and a hash of the files;
+- installs the `bench-dataset` command for every user;
+- prints checks (Python version, PyYAML, mounts and free space) and runs the bench's tests.
+
+**Updating:** change the code on your Mac, then `plan` and `apply-plan` again. Only a change to the
+files (or to the stack's settings) sends anything; otherwise the plan shows no changes. What is
+deployed is the working copy, committed or not, so check `uncommitted_changes` in the output.
+
+**First dataset**, on the origin client (`./tf.sh 05-bench output` prints the login command):
+
+```bash
+bench-dataset plan   --spec smoke                                   # 200 files, a few MB, nothing written
+bench-dataset create --target /mnt/fsxn/vol_origin --spec smoke
+bench-dataset verify <dataset-id> --side origin
+bench-dataset list
+```
+
+The files go to `/mnt/fsxn/vol_origin/<dataset-id>/`, the records (manifest, timings) to
+`~/bench-results/datasets/<dataset-id>/`. All commands: [bench/dataset/README.md](bench/dataset/README.md).
+
 ## Settings
 
 Module variables are never set directly: each stack fills them in. You only edit these files
@@ -264,6 +311,7 @@ Module variables are never set directly: each stack fills them in. You only edit
 | `stacks/01-landing-zone/terraform.tfvars` | VPC CIDRs, subnet CIDR overrides, `origin_nat_gateway` / `cache_nat_gateway` (default `false`); SMB: `ad_domain_name` (`flexcache.lab`), `ad_short_name` (`FLEXCACHE`), `ad_edition` (`Standard`), `ad_az`, `ad_subnet_cidr` |
 | `stacks/02-fsxn/terraform.tfvars` | `origin_fsxn` / `cache_fsxn` (default SINGLE_AZ_1, 128 MB/s, 1024 GiB), `origin_volume` (default `vol_origin`, FlexGroup, 800 GiB, storage efficiency on); SMB: `svm_netbios_names` (`origin`, `cache`) |
 | `stacks/03-ec2/terraform.tfvars` | `origin_ec2` / `cache_ec2`, `instance_type` (`t3.small` Linux, `t3.medium` Windows), `enable_eice` / `enable_ssm`, `nfs_options`, `cache_mounts_origin`; SMB: `domain_join` (`true`), `smb_drives` (`O`, `X`) |
+| `stacks/05-bench/terraform.tfvars` | `bench_clients` (`origin`, `cache`), `install_packages` (none; e.g. `python3-pyyaml`), `run_tests` (`true`) |
 | `stacks/04-flexcache/terraform.tfvars` | `flexcache_name` (`vol_cache`), `flexcache_size_gib` (500), `flexcache_junction_path`, `cache_aggregates`, `create_secrets_endpoint`; SMB: `share_names` (`origin`, `cache`) |
 
 The stack files are optional; without them every value has a default. `tf.sh` passes
@@ -428,6 +476,7 @@ generated fsxadmin password, so never commit it.
 Reverse order, highest number first. Each asks for `yes`:
 
 ```bash
+./tf.sh 05-bench destroy            # only if deployed: removes /opt/bench from the clients
 ./tf.sh 04-flexcache destroy        # runs on the origin client: FlexCache, SVM peer, cluster peer
 ./tf.sh 03-ec2 destroy              # destroy 04 first: it needs the origin client
 ./tf.sh 02-fsxn destroy             # deletes both FSx for ONTAP and the fsxadmin secret
