@@ -20,7 +20,8 @@ resource "aws_directory_service_directory" "this" {
   short_name = var.short_name
   password   = var.admin_password
 
-  description = "Managed AD for ${var.name} (SMB on FSx for ONTAP)"
+  # AWS only allows letters, digits, spaces and _ @ # % * + = : ? . / ! - \ here (no parentheses).
+  description = "Managed AD for ${var.name} - SMB on FSx for ONTAP"
 
   vpc_settings {
     vpc_id     = var.vpc_id
