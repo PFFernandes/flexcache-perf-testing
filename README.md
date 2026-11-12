@@ -469,6 +469,83 @@ Each dataset gets an id (`ds-<size>-<utc time>`). Its files go to
 
 All commands, sizes and options: [bench/dataset/README.md](bench/dataset/README.md).
 
+### Consulting the results
+
+Everything is on the results volume, readable from **either client** (log in with the command
+from `./tf.sh 05-bench output`):
+
+```
+/mnt/fsxn/vol_bench/
+  datasets/<dataset-id>/dataset.json        summary: spec, mount/NFS options, timings, throughput, latency percentiles
+  datasets/<dataset-id>/manifest-g<N>.csv.gz every file: path, size, checksum
+  datasets/<dataset-id>/ops-g<N>.csv.gz      one row per file: open, write, fsync, close in microseconds
+  telemetry/<lab>/<side>/<instance-id>/metrics*.json   Collector output, one OTLP JSON batch per line
+  logs/                                      bench-datasets-nfs --background logs
+  labs/<lab>/lab.json                        regions, file systems, clients, results volume
+```
+
+What works today:
+
+- **Which datasets exist, and are they intact:**
+
+  ```bash
+  bench-dataset list
+  bench-dataset verify <dataset-id> --side origin
+  ```
+
+- **All datasets side by side** (throughput, files/s, open and close latency in microseconds):
+
+  ```bash
+  python3 - <<'PY'
+  import glob, json
+  print(f"{'dataset':32}{'files':>8}{'GiB':>8}{'MB/s':>8}{'files/s':>9}{'open p50':>10}{'open p99':>10}{'close p99':>11}")
+  for p in sorted(glob.glob("/mnt/fsxn/vol_bench/datasets/*/dataset.json")):
+      m = json.load(open(p)); g = m["generations"][0]; lat = g["latency_us"].get("create", {})
+      us = lambda f, q: lat.get(f, {}).get(q, "-")
+      print(f"{m['id']:32}{g['files']:>8}{g['bytes']/2**30:>8.1f}{g['throughput_bytes_per_s']/1e6:>8.1f}"
+            f"{g['files_per_s']:>9.1f}{us('open_us','p50'):>10}{us('open_us','p99'):>10}{us('close_us','p99'):>11}")
+  PY
+  ```
+
+- **What the Collector recorded** (metric names and how many data points):
+
+  ```bash
+  cat /mnt/fsxn/vol_bench/telemetry/*/*/*/metrics*.json | python3 -c 'import json,sys,collections
+  c = collections.Counter()
+  for line in sys.stdin:
+      for rm in json.loads(line)["resourceMetrics"]:
+          for sm in rm["scopeMetrics"]:
+              for m in sm["metrics"]:
+                  c[m["name"]] += len(next(iter(v for k, v in m.items() if k in ("gauge", "sum", "histogram"))).get("dataPoints", []))
+  for name, n in sorted(c.items()): print(f"{n:>8}  {name}")'
+  ```
+
+- **FSx for ONTAP and EC2 metrics:** in CloudWatch (console → CloudWatch → Metrics → `AWS/FSx` and
+  `AWS/EC2`), for the dataset's time window (`started` / `finished` in its `dataset.json`). They are
+  not copied to `vol_bench` yet, and CloudWatch keeps 1-minute data for 15 days only.
+
+**After the lab is destroyed**, the results are in the final backup of `vol_bench`. To look at them
+again, a lab (at least `02-fsxn` and one client) must be running; restore the backup as a new volume
+and mount it on a client:
+
+```bash
+aws fsx describe-backups --region <origin_region> --query "Backups[?Tags[?Key=='Purpose' && Value=='bench-results']].[BackupId,CreationTime,Volume.Name]" --output table
+aws fsx create-volume-from-backup --region <origin_region> --backup-id <backup-id> --name vol_bench_restored \
+  --ontap-configuration "StorageVirtualMachineId=<svm-id>,JunctionPath=/vol_bench_restored,SizeInMegabytes=102400"
+```
+
+Then on a client: `sudo mkdir -p /mnt/fsxn/vol_bench_restored && sudo mount <svm-nfs-ip>:/vol_bench_restored
+/mnt/fsxn/vol_bench_restored`. Delete the restored volume afterwards (`aws fsx delete-volume`);
+it is not managed by Terraform.
+
+**Planned: `bench-report`.** One command on the origin client that turns a dataset or test into a
+single self-contained HTML page with every source on one shared time axis (client latency, host
+CPU/memory/network, NFS round-trip per operation, EC2 network limits, ping, and the FSx and EC2
+CloudWatch metrics for the same window, pulled through a CloudWatch endpoint and saved on
+`vol_bench`). Reports go to `vol_bench/reports/` and are viewed on the operator machine through an
+SSM port-forwarding tunnel (`http://localhost:8080`), with no public access. Grafana can be added
+later on the same data if ad-hoc exploration across many runs is needed.
+
 ## Settings
 
 Module variables are never set directly: each stack fills them in. You only edit these files
