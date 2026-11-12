@@ -1,0 +1,24 @@
+{
+  "name": "medium",
+  "description": "T-shirt size medium: 5MiB files, 100GiB in total (medium files).",
+  "size": {
+    "file_size": "5MiB",
+    "total": "100GiB"
+  },
+  "layout": {
+    "files_per_dir": 1000,
+    "depth": 2
+  },
+  "data": {
+    "compress_percent": 0,
+    "dedupe_percent": 0
+  },
+  "seed": 42,
+  "writers": {
+    "side": "origin",
+    "jobs": 16,
+    "block_size": "1MiB",
+    "checksums": "sample",
+    "fsync": false
+  }
+}

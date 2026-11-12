@@ -1,0 +1,24 @@
+{
+  "name": "2xsmall",
+  "description": "T-shirt size 2xsmall: 1MiB files, 50GiB in total (small files).",
+  "size": {
+    "file_size": "1MiB",
+    "total": "50GiB"
+  },
+  "layout": {
+    "files_per_dir": 1000,
+    "depth": 2
+  },
+  "data": {
+    "compress_percent": 0,
+    "dedupe_percent": 0
+  },
+  "seed": 42,
+  "writers": {
+    "side": "origin",
+    "jobs": 16,
+    "block_size": "1MiB",
+    "checksums": "sample",
+    "fsync": false
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "name": "2xlarge",
+  "description": "T-shirt size 2xlarge: 1GiB files, 300GiB in total (very large files: throughput).",
+  "size": {
+    "file_size": "1GiB",
+    "total": "300GiB"
+  },
+  "layout": {
+    "files_per_dir": 100,
+    "depth": 1
+  },
+  "data": {
+    "compress_percent": 0,
+    "dedupe_percent": 0
+  },
+  "seed": 42,
+  "writers": {
+    "side": "origin",
+    "jobs": 8,
+    "block_size": "1MiB",
+    "checksums": "sample",
+    "fsync": false
+  }
+}

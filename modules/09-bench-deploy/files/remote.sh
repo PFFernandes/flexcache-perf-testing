@@ -5,7 +5,8 @@
 #   remote.sh remove
 #
 # deploy: unpacks the bench into $BENCH_HOME (default /opt/bench), swapping the old copy
-#         out only once the new one is complete; installs /usr/local/bin/bench-dataset;
+#         out only once the new one is complete; installs the bench-dataset and
+#         bench-datasets-nfs commands;
 #         installs extra packages; prints checks; runs the bench tests.
 # remove: deletes $BENCH_HOME and the wrapper. Dataset files on the volumes and the
 #         records in each user's ~/bench-results are not touched.
@@ -18,8 +19,8 @@ log() { echo "[bench-deploy] $*"; }
 ACTION="${1:?action}"
 
 if [[ "$ACTION" == "remove" ]]; then
-  rm -rf "$BENCH_HOME" "$BENCH_HOME.new" "$BENCH_HOME.old" "$BIN_DIR/bench-dataset"
-  log "removed $BENCH_HOME and $BIN_DIR/bench-dataset (datasets and ~/bench-results are kept)"
+  rm -rf "$BENCH_HOME" "$BENCH_HOME.new" "$BENCH_HOME.old" "$BIN_DIR/bench-dataset" "$BIN_DIR/bench-datasets-nfs"
+  log "removed $BENCH_HOME, $BIN_DIR/bench-dataset and bench-datasets-nfs (datasets and ~/bench-results are kept)"
   exit 0
 fi
 
@@ -52,7 +53,14 @@ export PYTHONDONTWRITEBYTECODE=1
 exec python3 -m bench.dataset "\$@"
 WRAPPER
 chmod 755 "$BIN_DIR/bench-dataset"
-log "installed $BIN_DIR/bench-dataset"
+cat > "$BIN_DIR/bench-datasets-nfs" <<WRAPPER
+#!/bin/sh
+# Installed by modules/09-bench-deploy: creates the t-shirt size datasets on an NFS mount.
+export BENCH_HOME="$BENCH_HOME"
+exec bash "$BENCH_HOME/bench/scripts/datasets-nfs.sh" "\$@"
+WRAPPER
+chmod 755 "$BIN_DIR/bench-datasets-nfs"
+log "installed $BIN_DIR/bench-dataset and $BIN_DIR/bench-datasets-nfs"
 
 # 3. Extra packages (from the Amazon Linux repos, reached through the S3 gateway endpoint).
 if [[ -n "$PACKAGES" ]]; then

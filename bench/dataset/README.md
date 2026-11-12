@@ -3,8 +3,10 @@
 Creates the files the performance tests read and change. Standard-library Python only (3.9+), so it
 runs unchanged on the Amazon Linux 2023 clients. Design: [docs/test-bench-design.md](../../docs/test-bench-design.md) §4.
 
-Run it **on the machine that has the volume mounted** (origin client for `vol_origin`, cache client
-for `vol_cache`).
+Datasets are created **by hand by the users**: log in to the client that has the volume mounted
+(origin client for `vol_origin`, cache client for `vol_cache`) and run the commands below. Nothing
+creates, changes or deletes datasets automatically. The step-by-step procedure is in the
+[top-level README](../../README.md#creating-the-datasets-users-by-hand).
 
 **On the EC2 clients** it is installed by `stacks/05-bench` (see the top-level README) as the
 `bench-dataset` command, usable from any folder:
@@ -47,6 +49,48 @@ bench-dataset plan   --spec smoke      # show the plan, write nothing
 Other settings: `--jobs` (parallel writer processes), `--block-size`, `--files-per-dir`, `--depth`,
 `--checksums none|sample|all` (sample = 1 file in 100), `--fsync`.
 
+## T-shirt sizes on NFS
+
+Six ready-made datasets, one profile each in `profiles/datasets/` (KiB, MiB, GiB are powers of 1024):
+
+| Size | File size | Total | Files | Write time at 128 MB/s, at best |
+|---|---|---|---|---|
+| `small` | 64 KiB | 10 GiB | 163 840 | ~1.5 min (in practice longer: small files are metadata-bound) |
+| `2xsmall` | 1 MiB | 50 GiB | 51 200 | ~7 min |
+| `medium` | 5 MiB | 100 GiB | 20 480 | ~14 min |
+| `2xmedium` | 10 MiB | 200 GiB | 20 480 | ~28 min |
+| `large` | 50 MiB | 250 GiB | 5 120 | ~35 min |
+| `2xlarge` | 1 GiB | 300 GiB | 300 | ~42 min |
+| **all** | | **910 GiB** | | **~2 h** |
+
+The times assume the default FSx throughput capacity of 128 MB/s; the client's own network limit
+(small with `t3.small`) can make them longer.
+
+`bench-datasets-nfs` (installed on the clients by stack 05) creates any of them on an NFS mount,
+one after the other:
+
+```bash
+bench-datasets-nfs --dry-run all                      # plan + space check, writes nothing
+bench-datasets-nfs --scale 0.01 small medium          # 1 % trial run first
+bench-datasets-nfs small 2xsmall medium               # the real thing
+bench-datasets-nfs --background all                   # keeps running after you log out
+```
+
+- **NFS only:** it refuses a target that isn't an NFS mount. The default target is
+  `/mnt/fsxn/vol_origin`; `--target` and `--side cache` write through `/mnt/fsxn/vol_cache` instead.
+- **Space is checked for the whole selection** before anything is written (plus 10 %). With the
+  lab defaults **all six don't fit**: 910 GiB against an 800 GiB `vol_origin`. The error says which
+  sizes fit; delete older datasets, choose fewer sizes, or make `vol_origin` bigger
+  (`origin_volume.size_gib` in `stacks/02-fsxn`). Keep the FlexCache size (500 GiB by default) in
+  mind too when the cache will read them.
+- Each size becomes its own dataset (`ds-<size>-<utc time>`) with its own manifest and per-file
+  timings. It stops at the first failure unless `--keep-going`.
+- `--background` writes the output to `~/bench-results/logs/datasets-nfs-<time>.log` and prints the
+  `tail -f` command. Use it for anything that takes longer than your SSM session.
+- `--scale F` writes F × each total with the same file size, for trial runs. Below 0.0034 the
+  2xlarge size holds less than one 1 GiB file and becomes one shorter file (the script warns).
+- Other options: `--jobs N`, `--force` (skip the space check), `--allow-non-nfs` (testing only).
+
 ## Modify (a new generation)
 
 Each modify is a numbered generation with its own manifest. `--side` records where it was done;
@@ -81,8 +125,10 @@ In `~/bench-results/datasets/<dataset-id>/` with `bench-dataset`, `results/datas
 | `manifest-g<N>.csv.gz` | Every file after generation N: index, path, size, SHA-256 (if checksummed), state. |
 | `ops-g<N>.csv.gz` | One row per file operation: timestamp and the time of open, I/O, fsync and close in microseconds. |
 
-`modify`, `verify` and `delete` need these records, so run them on the machine that created the
-dataset (or copy the folder). Uploading them to the results store comes with the Tooling module.
+`modify`, `verify`, `delete` and `list` need these records, so run them **as the same user on the
+same client** that created the dataset, or point everyone at one folder with `BENCH_OUT`. The
+records stay on the client and are deleted with it; uploading them to the results store comes with
+the Tooling module.
 
 ## Tests
 

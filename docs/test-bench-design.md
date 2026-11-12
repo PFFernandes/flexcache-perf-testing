@@ -1,6 +1,6 @@
 # Test bench framework – design
 
-Status: **draft v7 for review**. Nothing here is implemented yet.
+Status: **draft v8 for review**. Nothing here is implemented yet.
 
 The Terraform stacks build the lab (Origin, Cache, two EC2 instances, FlexCache). The test bench is
 the layer on top: it fills the volumes with datasets, runs read/write and file open/close tests from
@@ -15,6 +15,7 @@ destroyed, and lets us review it later on a dashboard.
 | v5 | The bench platform is an **optional last stack**, `05-bench`, built after stacks 01-04 (§2.5). It installs the bench onto the workers itself, so stacks 01-04 work unchanged without it. |
 | v6 | The bench is organised as **four modules**: Dataset, Tooling, Run, Observe (§2.6). Results are saved in a store that is separate from Observe, so Observe can be deleted, recreated and attached to saved results later. |
 | v7 | Built: module 1 (Dataset, `bench/dataset`) and delivery to the clients: `modules/09-bench-deploy` + `stacks/05-bench` (§2.7). Module numbers follow the repository today (`07-ec2-client`, `08-ontap-flexcache`), so the bench's Terraform modules start at 09. |
+| v8 | **Datasets are manual**: users create, change, verify and delete them by hand on the clients (`bench-dataset`, `bench-datasets-nfs`). No state machine, Lambda or schedule touches datasets; the automation starts at the test runs (§2.6, §4). |
 
 ## 0. Decisions so far
 
@@ -24,6 +25,7 @@ destroyed, and lets us review it later on a dashboard.
 | NFS versions | **Both** `vers=3` and `vers=4.1` are tested; NFS version is a test dimension. |
 | FlexCache write-back | To investigate (FSx supports it since May 2025, ONTAP 9.15.1+ on origin and cache). Not a priority: lab option and tests come in a later phase. |
 | Cross-region | **Planned.** Built into the platform from phase 1. |
+| Datasets | **Manual.** Users log in to the client and run `bench-dataset` / `bench-datasets-nfs` themselves. Only the test runs are automated. Six t-shirt sizes are defined (§4.5). |
 | Priority | **Review results after the fact** is the priority. Live indicators during a run: nice to have, later. |
 | Identity Center | Not available → no Amazon Managed Grafana. Dashboard choice in §7, **to decide**. |
 | Platform stack | **`05-bench`, applied after 01-04, only if wanted** (`deploy_bench = true`). The lab works without it. Its data survives a lab teardown (§2.5). |
@@ -33,7 +35,7 @@ destroyed, and lets us review it later on a dashboard.
 
 | # | Goal |
 |---|---|
-| G1 | **Datasets:** create random files on the origin volume from a file count, a file size (or size range) and a total capacity. Optionally write from the cache side: new files or modifications of existing ones. |
+| G1 | **Datasets, created by hand by the users:** create random files on the origin volume from a file count, a file size (or size range) and a total capacity. Optionally write from the cache side: new files or modifications of existing ones. |
 | G2 | **Performance tests** on the origin, the cache or both (one switch), run by the two EC2 instances: throughput, IOPS and latency (fio), and **file open / close latency on a cold and on a warm cache** (`bench-fileops`). Plus host CPU/memory/network, the latency between the two clusters (ONTAP cluster peer ping) and CloudWatch metrics. |
 | G3 | **Dashboard in AWS** to review any stored run later: all sources on one time axis, events marked, runs compared. Works when the lab is destroyed. |
 | G4 | **Everything kept in AWS:** configurations, test definitions, raw and processed results, so a new lab can repeat any old test. |
@@ -84,7 +86,7 @@ Two layers with different lifetimes:
  ┌────────────────────────────────────────────────────────────────────────────────────────┐
  │  trigger: bench CLI (anywhere) · Step Functions console · EventBridge Scheduler        │
  │        ▼                                                                               │
- │  Step Functions  bench-dataset · bench-run · bench-maintenance                          │
+ │  Step Functions  bench-run · bench-maintenance                                          │
  │        │  Lambda: discover-lab · dispatch (SSM in any region) · collect-cloudwatch ·    │
  │        │          finalize · stage-vendor (downloads OTel/node_exporter/Harvest)        │
  │        ▼                                                                               │
@@ -112,7 +114,7 @@ Two layers with different lifetimes:
 | **Workers** | the two lab EC2 instances, found by tag `BenchRole = origin \| cache` + `BenchLab = <creator>-<project>` | All I/O (datasets, fio, fileops) and all in-VPC telemetry. |
 | **`bench-agent`** | both workers, installed by stack 05 over SSM from `s3://…/agent/current/` | `start <job>` as a detached `systemd-run` unit, `status`, `stop`, `update`. Starts/stops the OTel Collector for a run, controls caches and mounts, uploads results. |
 | **OTel Collector** | both workers, only during a run | One pipeline for all environment telemetry (§5.5), written to S3 as OTLP. |
-| **Step Functions** | platform | Runs a dataset or a suite step by step: discover lab, snapshot it, send jobs, wait, collect CloudWatch, finalize. |
+| **Step Functions** | platform | Runs a test suite step by step (datasets are manual, §4): discover lab, snapshot it, send jobs, wait, collect CloudWatch, finalize. |
 | **Lambda `dispatch`** | platform, outside any VPC | SSM `SendCommand` / `GetCommandInvocation` in the worker's region (cache worker may be in another region). |
 | **Lambda `discover-lab`** | platform | Finds workers, FSx file systems, SVMs, volumes and endpoints by tags in both regions. No Terraform state needed. |
 | **Lambda `collect-cloudwatch`** | platform | `ListMetrics` + `GetMetricData` for the step window: `AWS/FSx` (both file systems, both regions) and `AWS/EC2` (both workers). |
@@ -146,7 +148,6 @@ Step Functions retry or SSM agent restart doesn't lose a job. `bench stop <run>`
 From anywhere with the right IAM role (workstation, CloudShell, CI):
 
 ```bash
-bench dataset create --spec mixed-500g                      # starts bench-dataset
 bench run --suite open-latency --dataset ds-mixed-500g-… --side both
 bench status <run-id>
 bench review                                                # opens the dashboard (§7)
@@ -156,11 +157,16 @@ bench review                                                # opens the dashboar
 `s3://…/requests/`, calls `StartExecution`. The same JSON works in the Step Functions console or on
 an EventBridge Scheduler schedule.
 
+Datasets are **not** started this way: users create them by hand on the clients (§4). A run only
+names an existing dataset.
+
 ### 2.4 Lock, pre-flight, cleanup, dry-run
 
-- **One run per lab.** `bench-run` and `bench-dataset` take a lock (`labs/<lab>/lock.json`, written
-  with an S3 conditional put) and refuse to start while another holds it. `bench unlock` clears a
-  stale lock.
+- **One run per lab.** `bench-run` takes a lock (`labs/<lab>/lock.json`, written with an S3
+  conditional put) and refuses to start while another run holds it. `bench unlock` clears a stale
+  lock. A user writing a dataset by hand during a run would distort it, so once the store exists
+  `bench-dataset create` / `modify` check the lock and refuse while a run holds it; until then,
+  users coordinate.
 - **Pre-flight** before the first step: both agents online, mounts possible with the requested NFS
   versions, free space, no leftover bench mounts or collectors, instance type not burstable (warn),
   FSx not inside its weekly maintenance window, clocks in sync.
@@ -168,7 +174,7 @@ an EventBridge Scheduler schedule.
   fio/fileops and the collector, unmount `/mnt/bench/*`, restore the permanent mounts, delete
   scratch files, mark the run `failed` or `stopped`, release the lock. Cleanup is idempotent;
   `bench cleanup` runs it by hand.
-- **`--dry-run`** on `dataset create` and `run` prints the expanded step list, the space needed,
+- **`--dry-run`** on `run` prints the expanded step list, the space needed,
   the estimated duration (from FSx throughput capacity and earlier runs) and the estimated lab
   cost for that time, without starting anything.
 
@@ -211,7 +217,7 @@ command group and, where it needs AWS resources, its own Terraform module inside
 
 | # | Module | What it does | Command | AWS resources | Details |
 |---|---|---|---|---|---|
-| 1 | **Dataset** | Plans and writes the files (count, size, total), from the origin or the cache side; modifies, verifies and deletes them; keeps the manifest. | `bench dataset …` | none of its own | §4 |
+| 1 | **Dataset** (manual) | Plans and writes the files (count, size, total), from the origin or the cache side; modifies, verifies and deletes them; keeps the manifest. **Run by hand by the users on the clients.** | `bench-dataset …`, `bench-datasets-nfs` | none of its own | §4 |
 | 2 | **Tooling** | Builds what the tests need: `bench-agent`, fio, `bench-fileops`, the collectors (OTel, node_exporter, Harvest) on the two workers, and the engine that drives them (Step Functions, Lambdas, lock, pre-flight, cleanup). | `bench tooling install \| check \| update \| remove` | Step Functions, Lambdas, IAM, worker attachment | §2.1-2.4 |
 | 3 | **Run** | Runs the performance tests: suites, workloads, side switch, NFS version, cache state, repetitions. Produces raw results and telemetry. | `bench run …`, `bench status`, `bench stop` | none of its own (uses Tooling) | §5 |
 | 4 | **Observe** | Turns saved results into tables and shows them: Athena tables, Grafana, the five dashboards, reports. | `bench observe attach \| open \| detach`, `bench report` | Glue/Athena, review Grafana | §6.2, §7 |
@@ -226,10 +232,10 @@ Underneath all four sits the **results store**: the S3 bucket(s) of §6.1. It is
                               raw results, telemetry, curated tables
 ```
 
-**Dependencies.** Dataset and Run both execute on the workers through Tooling's agent, so in
-practice Tooling is installed first (`bench dataset create` says so if it is missing). The one
-piece they share, `bench-fileops`, lives in Tooling; Dataset uses it as its writer. Observe
-depends on nothing but the store.
+**Dependencies.** Dataset is **standalone and manual**: it needs only the delivery of §2.7 (the
+commands on the clients) and its own Python writer, not Tooling's agent or engine. Run executes
+through Tooling and only *reads* datasets: it takes a dataset id and the manifest from the
+dataset's records. Observe depends on nothing but the store.
 
 **Save now, observe later.** This is how module 4 is built:
 
@@ -283,21 +289,25 @@ collector and platform versions, Git commit).
 
 ### 4.1 Sizing inputs
 
+Everything in this section is done **by hand by a user** logged in to the client that has the
+volume mounted (normally the origin client). The step-by-step procedure for users is in the
+top-level README ("Creating the datasets").
+
 `files × mean size = total`: any **two** are given, the third is derived (all three must agree
 within 1 %).
 
 ```bash
-bench dataset create --files 100000 --file-size 64KiB                 # total derived: 6.1 GiB
-bench dataset create --total 600GiB --file-size 1GiB                  # files derived: 600
-bench dataset create --total 500GiB --file-size 1MiB-64MiB            # uniform range
-bench dataset create --files 50000  --size-mix "70:4KiB-64KiB,25:1MiB-16MiB,5:1GiB"
+bench-dataset create --files 100000 --file-size 64KiB                 # total derived: 6.1 GiB
+bench-dataset create --total 600GiB --file-size 1GiB                  # files derived: 600
+bench-dataset create --total 500GiB --file-size 1MiB-64MiB            # uniform range
+bench-dataset create --files 50000  --size-mix "70:4KiB-64KiB,25:1MiB-16MiB,5:1GiB"
 ```
 
 The plan is checked against the volume's free space (10 % margin) and given an ETA from the FSx
 throughput capacity before anything is written. With the lab defaults (`vol_origin` 800 GiB,
 FlexCache 500 GiB, 128 MB/s) a dataset can't exceed ~700 GiB, and 1 TiB would take over two hours
-to write; bigger datasets need a bigger lab first. `bench dataset delete <id>` removes an
-instance's files and frees the space (the manifest and metrics stay in the store).
+to write; bigger datasets need a bigger lab first. `bench-dataset delete <id> --yes` removes an
+instance's files and frees the space (the manifest and metrics stay in the records).
 
 ### 4.2 Spec file
 
@@ -327,32 +337,67 @@ writers:
   checksums: sample              # none | sample (1 %) | all
 ```
 
-### 4.3 How it is written
+### 4.3 How it is written (built)
 
-- **Planner** (Lambda in `bench-dataset`): expands the spec into a deterministic file list from the
-  seed and splits it into one shard per writer thread. The file list is the manifest.
-- **Writer:** `bench-fileops` in `create` mode (§5.3), so **every file's create, write, fsync and
-  close is timed** – creating a dataset is also a recorded metadata + write test. Large-file
-  datasets may use fio for the data part (per spec).
-- **Output:** `manifest-g0.parquet` (path, size, checksum), `dataset.yaml` (resolved spec, lab
-  snapshot, timings, throughput, create/close latency percentiles), raw fileops logs.
+- **On the client, in one command:** `bench-dataset create` expands the spec into a deterministic
+  file list from the seed (the manifest), checks the free space, creates the directories and writes
+  the files with parallel writer processes. Same spec + seed = same names, sizes and bytes.
+- **Writer:** standard-library Python, so it runs on Amazon Linux without installing anything.
+  **Every file's open, write, fsync and close is timed**, so creating a dataset is also a recorded
+  metadata + write test. Python adds a few microseconds per call, which is fine at the
+  millisecond scale of NFS writes; the cold/warm *open* measurements of §5.3 still use the C
+  `bench-fileops`.
+- **Records**, in `~/bench-results/datasets/<id>/` of the user who ran it (or `$BENCH_OUT`):
+  `dataset.json` (resolved spec, side, mount and NFS options, host, kernel, timings, throughput,
+  latency percentiles per generation), `manifest-g<N>.csv.gz` (path, size, SHA-256, state) and
+  `ops-g<N>.csv.gz` (one row per file operation). Once the store exists, `bench-dataset` also
+  uploads them to `datasets/<id>/` so Run and Observe can find them.
+- `--resume` continues an interrupted create; `--dry-run` writes nothing.
 
 ### 4.4 Writing from the cache side
 
-`writers.side: cache` (or `bench dataset modify --side cache`) writes through `vol_cache` from the
+By hand, on the cache client, `bench-dataset modify --side cache --target /mnt/fsxn/vol_cache` (or a spec with `writers.side: cache`) writes through `vol_cache` from the
 cache worker. FlexCache forwards the writes to the origin (write-around today; write-back later,
 §0), so this measures the write path across the peering – across regions in a cross-region lab.
 
 ```bash
-bench dataset modify ds-… --side cache --mode create    --total 50GiB --file-size 4MiB   # new files under _cache_writes/
-bench dataset modify ds-… --side cache --mode overwrite --percent 10 --range random     # rewrite parts of 10 % of files
-bench dataset modify ds-… --side cache --mode append    --percent 5  --bytes 1MiB
-bench dataset modify ds-… --side cache --mode metadata  --percent 2  --ops rename,chmod,delete
+bench-dataset modify ds-… --side cache --mode create    --total 50GiB --file-size 4MiB   # new files under _cache_writes/
+bench-dataset modify ds-… --side cache --mode overwrite --percent 10 --range random     # rewrite parts of 10 % of files
+bench-dataset modify ds-… --side cache --mode append    --percent 5  --bytes 1MiB
+bench-dataset modify ds-… --side cache --mode metadata  --percent 2  --ops rename,chmod,delete
 ```
 
 Each modify is a new **generation** with its own manifest delta. `--verify` re-reads the touched
 files on the origin worker and compares checksums (sample), which also measures how long a
 cache-side change takes to be visible at the origin.
+
+### 4.5 T-shirt sizes (built)
+
+Six profiles in `profiles/datasets/`, created by hand with `bench-datasets-nfs <size>…` on an NFS
+mount, one dataset per size:
+
+| Size | File size | Total | Files |
+|---|---|---|---|
+| `small` | 64 KiB | 10 GiB | 163 840 |
+| `2xsmall` | 1 MiB | 50 GiB | 51 200 |
+| `medium` | 5 MiB | 100 GiB | 20 480 |
+| `2xmedium` | 10 MiB | 200 GiB | 20 480 |
+| `large` | 50 MiB | 250 GiB | 5 120 |
+| `2xlarge` | 1 GiB | 300 GiB | 300 |
+
+All six are 910 GiB, more than the default 800 GiB `vol_origin`; the script checks the space for
+the whole selection first. `--scale` gives trial runs, `--background` survives logging out.
+
+### 4.6 What manual datasets mean for the test runs
+
+- A run **never creates or deletes** a dataset. It checks that the named dataset exists, that its
+  manifest matches the files (sample), and that it is big enough for the suite; if not, it stops
+  and says which dataset (size, or how many never-seen files for cold steps) the user should create.
+- Cold-cache steps use up never-read files (§5.3). When a dataset has none left, the user creates
+  a new one (or a new generation) by hand.
+- The `origin-change` step of `open-latency` (changing 5 % of the files at the origin during the
+  suite) is part of the *measurement* of invalidation, so it stays inside the run. It works on
+  files the run writes itself under `_bench/<run>/`, never on the user's dataset files.
 
 ## 5. Performance tests (G2)
 
@@ -632,7 +677,8 @@ table and can be plotted against each other.
 ```bash
 # build the lab as usual (stacks 01-04), then ./tf.sh 05-bench apply: attaches the bench to the new workers
 bench lab check                                            # discover-lab + agents online + mounts + NFS v3/v4.1 OK
-bench dataset create --from ds-mixed-500g-20261110-1415    # same spec + seed = same files
+# a user recreates the dataset by hand on the new lab: same spec + seed = same files
+bench-dataset create --target /mnt/fsxn/vol_origin --spec mixed-500g --seed 42
 bench run --rerun run-20261110T1432Z-open-latency-7f3a     # same suite on the new lab
 ```
 
@@ -809,8 +855,8 @@ by hand first and automated after.
 |---|---|---|
 | 0 – Lab + spike | Apply stacks 01-04 once (same-region). Check by hand: NFS v4.1 on both SVMs and through FlexCache (numeric IDs, delegations); NFS ops behind `open()` for v3 and v4.1; the mount/cache rules of §5.1; how to see cold vs warm from ONTAP (cache volume used space, FlexCache counters); REST passthrough for `cluster peer ping`; `prepopulate`; ONTAP version and the write-back field. | Every assumption marked "to verify" in this document is confirmed or replaced. |
 | 1 – First numbers, by hand | `fileops.c` and a minimal dataset writer, run with plain SSM commands; fio by hand; results copied to an S3 bucket; one Athena query or notebook. Includes a noise baseline and the telemetry-free reference. | Q1 and Q2 have a first answer (cold vs warm open, v3 vs v4.1) with repetitions, and we trust how it was measured. |
-| 2 – Agent + datasets | `bench-agent` (detached jobs, mounts, cache control, cleanup), dataset planner, `dataset create` / `modify` / `delete` / `--verify`, cache-state bookkeeping and evidence. | Phase 1's test runs from one `bench-agent start` per worker and cleans up after a forced failure. |
-| 3 – Platform | Stack 05 (home + staging bucket, Step Functions, `dispatch`, `discover-lab`, `plan_*`), lock, pre-flight, cleanup state, `--dry-run`, `bench` CLI, suites with `--side`, `--nfs`, `--concurrent`. | `open-latency` and `cache-read` run end to end from CloudShell, **in a cross-region lab**, with no manual step. |
+| 2 – Agent | `bench-agent` (detached jobs, mounts, cache control, cleanup), reading datasets by id (manifest and size check), cache-state bookkeeping and evidence. Datasets themselves are already built and stay manual (§4). | Phase 1's test runs from one `bench-agent start` per worker and cleans up after a forced failure. |
+| 3 – Platform | Stack 05 (home + staging bucket, Step Functions, `dispatch`, `discover-lab`, `plan_*`), lock, pre-flight, cleanup state, `--dry-run`, `bench` CLI, suites with `--side`, `--nfs`, `--concurrent`. | `open-latency` and `cache-read` run end to end from CloudShell, **in a cross-region lab**, with no manual step other than creating the dataset. |
 | 4 – Telemetry | `stage-vendor`, OTel Collector, node_exporter, Harvest with the read-only user, peer/LIF ping, `collect-cloudwatch`, telemetry overhead run. | One run holds every source on one clock, and the overhead of collecting it is known. |
 | 5 – Tables + review dashboard | `finalize` (incl. cache-state verification and flags), Glue tables, on-demand Grafana, `bench review`, the five dashboards. | An `open-latency` run can be reviewed end to end with the lab destroyed. |
 | 6 – Campaigns | Campaign labels, compare dashboard with the noise band, `--rerun`, schedules, `bench report`. | Q6: same-region vs cross-region compared in one view. |

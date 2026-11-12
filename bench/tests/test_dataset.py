@@ -105,6 +105,30 @@ class Planning(unittest.TestCase):
         self.assertTrue(all("/" not in e["path"] for e in planner.plan(spec)))
 
 
+class TShirtSizes(unittest.TestCase):
+    """profiles/datasets/<size>.json: the sizes agreed for the NFS datasets."""
+    EXPECTED = {   # size: (file size, total, files)
+        "small": ("64KiB", "10GiB", 163840),
+        "2xsmall": ("1MiB", "50GiB", 51200),
+        "medium": ("5MiB", "100GiB", 20480),
+        "2xmedium": ("10MiB", "200GiB", 20480),
+        "large": ("50MiB", "250GiB", 5120),
+        "2xlarge": ("1GiB", "300GiB", 300),
+    }
+
+    def test_profiles(self):
+        root = os.path.join(os.path.dirname(__file__), "..", "..", "profiles", "datasets")
+        for name, (fsize, total, files) in self.EXPECTED.items():
+            with self.subTest(size=name):
+                spec = specmod.normalize(specmod.load_file(os.path.join(root, f"{name}.json")))
+                self.assertEqual(spec["name"], name)
+                self.assertEqual(spec["total"], parse_size(total))
+                self.assertEqual(spec["buckets"], [{"weight": 1.0, "lo": parse_size(fsize), "hi": parse_size(fsize)}])
+                entries = planner.plan(spec)
+                self.assertEqual(len(entries), files)
+                self.assertEqual(sum(e["size"] for e in entries), parse_size(total))
+
+
 def run(*argv):
     out = io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):

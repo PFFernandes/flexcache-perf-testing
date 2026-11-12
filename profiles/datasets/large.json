@@ -1,0 +1,24 @@
+{
+  "name": "large",
+  "description": "T-shirt size large: 50MiB files, 250GiB in total (large files).",
+  "size": {
+    "file_size": "50MiB",
+    "total": "250GiB"
+  },
+  "layout": {
+    "files_per_dir": 500,
+    "depth": 1
+  },
+  "data": {
+    "compress_percent": 0,
+    "dedupe_percent": 0
+  },
+  "seed": 42,
+  "writers": {
+    "side": "origin",
+    "jobs": 8,
+    "block_size": "1MiB",
+    "checksums": "sample",
+    "fsync": false
+  }
+}

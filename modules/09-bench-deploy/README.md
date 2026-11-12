@@ -11,7 +11,8 @@ client, `files/remote.sh` runs as root:
 1. unpacks into `/opt/bench.new`, then swaps it with `/opt/bench` (a failed unpack never leaves a
    half-updated bench);
 2. writes `/opt/bench/VERSION.json`: Git commit, branch, uncommitted changes yes/no, file hash, time;
-3. installs `/usr/local/bin/bench-dataset` (any user; records go to `~/bench-results/datasets`);
+3. installs `/usr/local/bin/bench-dataset` and `bench-datasets-nfs` (any user; records go to
+   `~/bench-results/datasets`);
 4. installs `install_packages` with `dnf` (a failure is reported, not fatal);
 5. prints Python and PyYAML availability and the `/mnt/fsxn/*` mounts with free space;
 6. runs the bench tests (`run_tests`), offline, in temporary folders.
@@ -25,7 +26,7 @@ setting changes; nothing is sent otherwise. On destroy `/opt/bench` and the comm
 dataset files on the volumes and `~/bench-results` stay. If a client is already gone, destroy just
 says so and continues.
 
-**Limit:** the bundle travels inside one SSM command, which `deploy.sh` keeps under 60 KB (about 33
+**Limit:** the bundle travels inside one SSM command, which `deploy.sh` keeps under 60 KB (about 41
 KB today). Above that it stops with a clear message; delivery through S3 comes with the Tooling
 module.
 

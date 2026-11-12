@@ -48,7 +48,7 @@ test client on each side, and connects the two file systems with **FlexCache**.
 | `02-fsxn` | FSx for ONTAP Origin and Cache, shared fsxadmin secret | ✅ ready |
 | `03-ec2` | Test client on the Origin and/or Cache (Linux for NFS, Windows for SMB) | ✅ ready |
 | `04-flexcache` | Cluster peer, SVM peer, FlexCache volume, SMB shares (run on the origin client) | ✅ ready |
-| `05-bench` (optional) | Test bench copied to the Linux clients: `bench-dataset` command ([Test bench](#test-bench-stack-05)) | 🧪 not yet run on AWS |
+| `05-bench` (optional) | Test bench tools on the Linux clients: `bench-dataset`, `bench-datasets-nfs`. Users create the datasets by hand ([Test bench](#test-bench-stack-05)) | 🧪 not yet run on AWS |
 | SMB option | Managed AD (01), domain-joined SVMs (02), Windows clients (03), shares (04) | 🧪 not yet run on AWS |
 
 The NFS lab has been deployed on AWS. Every stack passes `terraform validate` and offline tests with
@@ -120,7 +120,7 @@ or apply first prints the settings files it loaded, so check the regions there.
 | 2 | `./tf.sh 02-fsxn init`<br>`./tf.sh 02-fsxn plan`<br>`./tf.sh 02-fsxn apply-plan` | FSx for ONTAP Origin + Cache, SVMs, `vol_origin`, fsxadmin secret | 20-40 min, billed hourly |
 | 3 | `./tf.sh 03-ec2 init`<br>`./tf.sh 03-ec2 plan`<br>`./tf.sh 03-ec2 apply-plan` | origin and cache EC2 clients (Windows for SMB), Instance Connect + SSM endpoints | ~5 min; Windows ~10 min |
 | 4 | `./tf.sh 04-flexcache init`<br>`./tf.sh 04-flexcache plan`<br>`./tf.sh 04-flexcache apply-plan` | Secrets Manager endpoint, then on the origin client: cluster peer, SVM peer, `vol_cache`; SMB: shares `origin` and `cache` | ~5-10 min |
-| 5 (optional) | `./tf.sh 05-bench init`<br>`./tf.sh 05-bench plan`<br>`./tf.sh 05-bench apply-plan` | Test bench on the Linux clients: `/opt/bench` and the `bench-dataset` command (NFS only) | ~1 min |
+| 5 (optional) | `./tf.sh 05-bench init`<br>`./tf.sh 05-bench plan`<br>`./tf.sh 05-bench apply-plan` | Test bench tools on the Linux clients: `/opt/bench`, `bench-dataset`, `bench-datasets-nfs` (NFS only). Creates no datasets | ~1 min |
 
 During step 4 the apply prints the log of the origin client, e.g.
 `[flexcache] creating cluster peer ...`, `SVM peer state: peered`, `FlexCache vol_cache created`.
@@ -162,7 +162,19 @@ aws secretsmanager get-secret-value --secret-id <creator>-<project>/ad-admin --q
 The origin client shows the `origin` share as `O:`, the cache client the `cache` share as `X:` (up
 to a minute after step 4). The mapping log is `C:\fsxn\fsxn-map.log`.
 
-### 6. Tear everything down
+### 6. Create the datasets (by hand)
+
+Optional, with stack 05 and `protocol = "nfs"`. Nothing creates datasets automatically: a user logs
+in to the origin client and runs the commands, for example:
+
+```bash
+bench-datasets-nfs --dry-run small medium          # what would be written, and does it fit
+bench-datasets-nfs --background small medium       # write them; keeps running after you log out
+```
+
+The whole procedure is in [Test bench](#test-bench-stack-05).
+
+### 7. Tear everything down
 
 When you're done (FSx for ONTAP is billed every hour), destroy in reverse order. See
 [Destroy](#destroy).
@@ -286,24 +298,86 @@ On each client this:
 
 - unpacks the bench into `/opt/bench`, with `/opt/bench/VERSION.json` recording the Git commit,
   branch, whether there were uncommitted changes, and a hash of the files;
-- installs the `bench-dataset` command for every user;
+- installs the `bench-dataset` and `bench-datasets-nfs` commands for every user;
 - prints checks (Python version, PyYAML, mounts and free space) and runs the bench's tests.
 
 **Updating:** change the code on the operator machine, then `plan` and `apply-plan` again. Only a change to the
 files (or to the stack's settings) sends anything; otherwise the plan shows no changes. What is
 deployed is the working copy, committed or not, so check `uncommitted_changes` in the output.
 
-**First dataset**, on the origin client (`./tf.sh 05-bench output` prints the login command):
+Stack 05 only **installs the tools**. It creates no datasets, and destroying it doesn't delete any.
 
-```bash
-bench-dataset plan   --spec smoke                                   # 200 files, a few MB, nothing written
-bench-dataset create --target /mnt/fsxn/vol_origin --spec smoke
-bench-dataset verify <dataset-id> --side origin
-bench-dataset list
-```
+### Creating the datasets (users, by hand)
 
-The files go to `/mnt/fsxn/vol_origin/<dataset-id>/`, the records (manifest, timings) to
-`~/bench-results/datasets/<dataset-id>/`. All commands: [bench/dataset/README.md](bench/dataset/README.md).
+Datasets are created **manually by the users**, on the client that has the volume mounted:
+normally the origin client, writing to `vol_origin`. Each user runs the steps below when they need
+a dataset; nothing runs on a schedule or as part of an apply.
+
+1. **Log in to the origin client.** `./tf.sh 05-bench output` (or `./tf.sh 03-ec2 output`) prints
+   the command, e.g. `aws ssm start-session --target <origin-client-id> --region <origin_region>`.
+2. **Check the volume and the space.**
+
+   ```bash
+   df -h /mnt/fsxn/vol_origin
+   bench-dataset list                                 # datasets already recorded by you
+   ```
+
+3. **Smoke test** (200 files, a few MB) to check that the tools work:
+
+   ```bash
+   bench-dataset create --target /mnt/fsxn/vol_origin --spec smoke
+   bench-dataset verify <dataset-id> --side origin
+   ```
+
+4. **Plan the t-shirt sizes** you need. `--dry-run` shows the sizes and checks the free space for
+   all of them together; with the lab defaults all six (910 GiB) don't fit in the 800 GiB
+   `vol_origin`.
+
+   | Size | Files of | Total |
+   |---|---|---|
+   | `small` | 64 KiB | 10 GiB |
+   | `2xsmall` | 1 MiB | 50 GiB |
+   | `medium` | 5 MiB | 100 GiB |
+   | `2xmedium` | 10 MiB | 200 GiB |
+   | `large` | 50 MiB | 250 GiB |
+   | `2xlarge` | 1 GiB | 300 GiB |
+
+   ```bash
+   bench-datasets-nfs --dry-run small 2xsmall medium
+   ```
+
+5. **Optionally a 1 % trial run**, then **the real run in the background** (the larger sizes take
+   from minutes to hours, longer than an SSM session should stay open):
+
+   ```bash
+   bench-datasets-nfs --scale 0.01 small medium
+   bench-datasets-nfs --background small 2xsmall medium
+   tail -f ~/bench-results/logs/datasets-nfs-<time>.log     # the exact path is printed
+   ```
+
+6. **Check the result**, and delete datasets you no longer need to free the space:
+
+   ```bash
+   bench-dataset list
+   bench-dataset verify <dataset-id> --side origin
+   bench-dataset delete <dataset-id> --yes
+   ```
+
+Each dataset gets an id (`ds-<size>-<utc time>`). Its files go to
+`/mnt/fsxn/vol_origin/<dataset-id>/`, its records (spec, manifest, per-file timings) to
+`~/bench-results/datasets/<dataset-id>/` **of the user who created it**. Keep in mind:
+
+- **Records are per user and per client.** `modify`, `verify`, `delete` and `list` need them, so
+  run them as the same login on the same client (SSM logs in as `ssm-user`, Instance Connect as
+  `ec2-user`). Users who share datasets can point everyone at one folder with
+  `export BENCH_OUT=<shared folder>`.
+- **Records live on the client.** Destroying `03-ec2` deletes them; the dataset files themselves
+  stay on `vol_origin` until `02-fsxn` is destroyed. Copy the records off first if you need them
+  (there is no upload to S3 yet; it comes with the results store).
+- Changing data from the cache side (`bench-dataset modify --side cache --target /mnt/fsxn/vol_cache`)
+  is also done by hand, on the cache client, with the records of the original dataset.
+
+All commands, sizes and options: [bench/dataset/README.md](bench/dataset/README.md).
 
 ## Settings
 
