@@ -166,3 +166,9 @@ variable "cloudwatch" {
   type        = bool
   default     = true
 }
+
+variable "ontap_metrics" {
+  description = "With telemetry: bench-ontap on the origin client polls both clusters' ONTAP REST API with fsxadmin (volume latency/IOPS/throughput, NFS per operation, FlexCache hits and misses, latency between the clusters). Needs 04-flexcache."
+  type        = bool
+  default     = true
+}

@@ -377,6 +377,19 @@ copy happens for days, the oldest local telemetry is dropped rather than filling
 **final backup** of it, which outlives the file system. `./tf.sh 05-bench output` shows the command
 that lists the backups. Restoring one into a new lab is not automated yet.
 
+**ONTAP counters (`bench-ontap`).** With `ontap_metrics = true` (the default) and stack 04 applied,
+the origin client also polls **both** clusters' ONTAP REST API every 15 s with the **fsxadmin**
+credentials (read from Secrets Manager through the endpoint of stack 04): per watched volume
+(`vol_origin`, `vol_cache`, `vol_bench`) the cumulative `statistics` counters, turned into IOPS,
+throughput and average latency per operation type, NFS operations and latency per NFS operation,
+and for the FlexCache the blocks requested by clients and fetched from the origin (the cache
+miss %). It also measures the **latency between the two file systems** with ONTAP's own tools,
+in both directions: `network ping` from each cluster's intercluster LIFs to the other cluster's
+intercluster IPs, and `cluster peer ping` (both through the REST CLI passthrough; a method FSx
+refuses is logged once in `journalctl -u bench-ontap` and switched off). As a fallback it pings
+both clusters' intercluster IPs from the origin client. Like the rest, the data is staged locally, copied to
+`vol_bench` and pushed to the dashboard after each test. Without stack 04 it is simply off.
+
 The clients have no internet, so the Collector package reaches them through a small **package
 bucket** (S3, `vendor/` only; the clients may only read from it), created once per account:
 
@@ -499,6 +512,10 @@ lab, `<creator>-<project>-bench`, origin on the left and cache on the right:
   reads per pass (MB/s, open, first byte, whole file and close latency), client
   CPU, memory and network, NFS round-trip and operations per NFS operation, EC2 network-limit
   counters, ping to both file systems;
+- ONTAP's own counters for both clusters (`ontap_metrics = true`, needs stack 04): volume latency,
+  IOPS and throughput per operation type, NFS latency per NFS operation, **FlexCache misses**
+  (miss %, blocks requested and fetched from the origin) and the **latency between the FSx file
+  systems**, shown in both columns next to the read results;
 - next to AWS's own: FSx for ONTAP throughput and IOPS per volume, read/write latency, CPU and
   network utilization, and the clients' EC2 CPU.
 
@@ -593,7 +610,7 @@ Module variables are never set directly: each stack fills them in. You only edit
 | `stacks/02-fsxn/terraform.tfvars` | `origin_fsxn` / `cache_fsxn` (default SINGLE_AZ_1, 128 MB/s, 1024 GiB), `origin_volume` (default `vol_origin`, FlexGroup, 800 GiB, storage efficiency on); SMB: `svm_netbios_names` (`origin`, `cache`) |
 | `stacks/03-ec2/terraform.tfvars` | `origin_ec2` / `cache_ec2`, `instance_type` (`t3.small` Linux, `t3.medium` Windows), `enable_eice` / `enable_ssm`, `nfs_options`, `cache_mounts_origin`; SMB: `domain_join` (`true`), `smb_drives` (`O`, `X`) |
 | `stacks/00-bench-store/terraform.tfvars` | `noncurrent_version_days` (30): the package bucket |
-| `stacks/05-bench/terraform.tfvars` | `bench_clients` (`origin`, `cache`), `install_packages` (none; e.g. `python3-pyyaml`), `run_tests` (`true`), `telemetry` (`true`), `cloudwatch` (`true`), `results_volume` (`side = "origin"`, `name = "vol_bench"`, `size_gib = 100`), `telemetry_interval_s` (5), `ping_interval_s` (10), `collector_version` (`0.165.0`), `collector_architectures` (`amd64`) |
+| `stacks/05-bench/terraform.tfvars` | `bench_clients` (`origin`, `cache`), `install_packages` (none; e.g. `python3-pyyaml`), `run_tests` (`true`), `telemetry` (`true`), `cloudwatch` (`true`), `ontap_metrics` (`true`), `results_volume` (`side = "origin"`, `name = "vol_bench"`, `size_gib = 100`), `telemetry_interval_s` (5), `ping_interval_s` (10), `collector_version` (`0.165.0`), `collector_architectures` (`amd64`) |
 | `stacks/04-flexcache/terraform.tfvars` | `flexcache_name` (`vol_cache`), `flexcache_size_gib` (500), `flexcache_junction_path`, `cache_aggregates`, `create_secrets_endpoint`; SMB: `share_names` (`origin`, `cache`) |
 
 The stack files are optional; without them every value has a default. `tf.sh` passes
@@ -810,10 +827,15 @@ gone.
 - **Test bench:** the results volume `vol_bench` (100 GiB SSD by default) is billed as FSx for ONTAP
   SSD storage on the origin file system; its **final backup** as FSx backup storage, until you
   delete it. The package bucket only holds the 118 MB Collector package per region.
-  - **CloudWatch** (`cloudwatch = true`): one `monitoring` interface endpoint per client VPC (about
-    USD 0.01/h each), and the bench's custom metrics, about USD 0.30 per metric per month, prorated
-    by the hour. Each NFS operation per mount is its own metric, so a lab has a few hundred: roughly
-    USD 50-150 a month while it runs. Set `cloudwatch = false` to skip it.
+  - **CloudWatch** (`cloudwatch = true`), only while the lab (stack 05) exists:
+    - one `monitoring` interface endpoint per client VPC, about USD 0.01/h each, removed with stack 05;
+    - the bench's custom metrics: AWS bills a metric only for the **hours in which data is sent**
+      for it (about USD 0.30 per metric per month, prorated by the hour). The bench sends once at
+      the end of each test, so each push costs roughly USD 0.30 / 730 per metric: with a few hundred
+      metrics, a few tens of cents per test, and nothing between tests or once the lab is gone;
+    - the dashboard (the first three in an account are free, then about USD 3 per month each),
+      removed with stack 05. Stored metric data costs nothing.
+    Set `cloudwatch = false` to skip it.
 - **SMB only:**
   - **AWS Managed Microsoft AD** is billed per domain controller hour, and there are always two.
     An older AWS estimate puts Standard Edition at about USD 0.14/h; check the

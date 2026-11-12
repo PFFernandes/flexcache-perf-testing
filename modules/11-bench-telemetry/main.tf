@@ -57,6 +57,17 @@ locals {
     ping_targets    = c.ping_targets
   }) }
 
+  # bench-ontap runs on the origin client only (it may read the fsxadmin secret).
+  ontap_side = var.ontap != null && contains(keys(var.clients), "origin") ? "origin" : null
+  ontap_config = { for side, c in var.clients : side => side == local.ontap_side ? jsonencode({
+    interval_s      = var.ontap.interval_s
+    ping_interval_s = var.ontap.ping_interval_s
+    otlp_endpoint   = "http://127.0.0.1:4318/v1/metrics"
+    secret          = { arn = var.ontap.secret_arn, region = var.ontap.secret_region }
+    clusters        = var.ontap.clusters
+    peer_ping       = true
+  }) : "{}" }
+
   lab_json = jsonencode(merge(var.lab_info, {
     lab = var.lab
     results_volume = {
@@ -92,6 +103,7 @@ locals {
     "STAGING=${var.staging_dir}",
     "CLOUDWATCH_NAMESPACE=${coalesce(var.cloudwatch_namespace, "-")}",
     "CLOUDWATCH_REGION=${c.region}",
+    "ONTAP=${side == local.ontap_side ? 1 : 0}",
     "FLUSH_S=${var.flush_s}",
     "",
   ]) }
@@ -148,6 +160,7 @@ resource "terraform_data" "install" {
     collector   = sha256(local.collector_config[each.key])
     probe       = sha256(local.probe_config[each.key])
     lab         = sha256(local.lab_json)
+    ontap       = sha256(local.ontap_config[each.key])
     scripts     = sha256(join(",", [filesha256("${path.module}/files/install.sh"), filesha256("${path.module}/files/remote.sh")]))
   }
 
@@ -171,6 +184,7 @@ resource "terraform_data" "install" {
       COLLECTOR_B64 = base64encode(local.collector_config[each.key])
       PROBE_B64     = base64encode(local.probe_config[each.key])
       LAB_B64       = base64encode(local.lab_json)
+      ONTAP_B64     = base64encode(local.ontap_config[each.key])
     }
   }
 

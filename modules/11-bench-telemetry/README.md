@@ -44,6 +44,7 @@ if nothing is copied for days, the oldest local files are dropped rather than fi
 | `bench-probe` | `bench.nfs.ops`, `bench.nfs.rtt`, `bench.nfs.execute` per mount and NFS operation; `bench.nfs.bytes` per mount and direction | `interval_s` |
 | `bench-probe` | `bench.ena.allowance_exceeded` per ENA counter (needs `ethtool`, installed if missing) | `interval_s` |
 | `bench-probe` | `bench.ping.rtt`, `bench.ping.loss` to the origin and cache NFS IPs | `ping_interval_s` (10 s) |
+| `bench-ontap` (origin client, `ontap` set) | per watched volume of both clusters: `ontap.volume.ops`, `.latency` (µs), `.throughput` per op type; `ontap.volume.nfs.ops`, `.nfs.latency` per NFS operation; FlexCache: `ontap.flexcache.requested_blocks`, `.miss_blocks`, `.miss_percent`; **between the file systems, both directions:** `ontap.fs.ping_rtt` (`method` = `network-ping` from each intercluster LIF to the other cluster's intercluster IPs, or `cluster-peer-ping`; REST CLI passthrough, switched off if FSx refuses it); fallback `ontap.intercluster.ping_rtt` (ICMP from the origin client) | 15 s, pings 30 s |
 
 Every data point carries `bench.lab`, `bench.side`, `host.id` (instance ID), `cloud.provider`,
 `cloud.region`.
@@ -73,6 +74,7 @@ config in `/etc/otelcol-contrib/config.yaml` and `/etc/bench/probe.json`.
 | `clients` | – | `{ side = { region, instance_id, role_name, bucket, bucket_arn, bucket_region, ping_targets } }` (bucket = package bucket of that region) |
 | `results` | – | `{ volume_id, volume_name, side, nfs_ip, junction_path, mount_point, nfs_options }` |
 | `cloudwatch_namespace` | `null` | CloudWatch namespace to push to after each test; `null` = no push |
+| `ontap` | `null` | bench-ontap: `{ secret_arn, secret_region, clusters = { origin/cache = { mgmt_ip, volumes, intercluster_ips } } }`; uses the fsxadmin credentials; `null` = off |
 | `lab_info` | `{}` | content of `lab.json` |
 | `collector_version` | `0.165.0` | change together with `collector_sha256` |
 | `collector_sha256` | amd64, arm64 of 0.165.0 | from the release's `.sha256` files |
@@ -83,7 +85,7 @@ config in `/etc/otelcol-contrib/config.yaml` and `/etc/bench/probe.json`.
 | `local_buffer_mib` | 2048 | local disk for telemetry not yet copied |
 | `memory_limit_mib` | 256 | Collector memory limit |
 
-Outputs: `telemetry_files` (on the volume), `staging_dir`, `results_mount`, `collector_version`.
+Outputs: `telemetry_files` (on the volume), `staging_dir`, `results_mount`, `ontap_poller`, `collector_version`.
 
 Needs on the operator machine: `curl`, `sha256sum` or `shasum`, internet access to GitHub, and the
 AWS CLI with S3 (package upload) and SSM Run Command permissions.

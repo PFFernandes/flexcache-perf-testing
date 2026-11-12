@@ -27,6 +27,11 @@ results_volume = {
 # Adds a CloudWatch endpoint per client VPC (~USD 0.01/h each) and custom metrics.
 cloudwatch = true
 
+# ONTAP counters of both clusters (volume latency/IOPS/throughput, NFS per operation, FlexCache
+# hits and misses, latency between the clusters), polled by the origin client with fsxadmin.
+# Needs 04-flexcache (it gives the origin client the Secrets Manager endpoint and secret access).
+ontap_metrics = true
+
 telemetry_interval_s = 5  # host metrics, NFS and ENA counters
 ping_interval_s      = 10 # ping to both file systems' NFS IPs
 

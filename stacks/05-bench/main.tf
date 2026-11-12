@@ -9,6 +9,8 @@
 #                                                Collector + bench-probe write to it, and so do the
 #                                                dataset records. Nothing goes to S3.
 #
+#   ontap      (ontap_metrics = true, needs 04)   bench-ontap on the origin client: ONTAP volume, NFS and
+#                                                FlexCache counters of both clusters, with fsxadmin
 #   cloudwatch modules/13-bench-cloudwatch        CloudWatch endpoint + PutMetricData per client VPC;
 #   (cloudwatch = true)                          bench-results-sync pushes each test's metrics AFTER it
 #              modules/14-bench-dashboard        one dashboard: bench + FSx + EC2 metrics, both sides
@@ -41,6 +43,15 @@ data "terraform_remote_state" "lz" {
   backend = "local"
   config = {
     path = "${path.root}/../01-landing-zone/terraform.tfstate"
+  }
+}
+
+# Optional: without stack 04 (no FlexCache yet) the ONTAP poller is just off.
+data "terraform_remote_state" "flexcache" {
+  count   = var.telemetry && var.ontap_metrics && fileexists("${path.root}/../04-flexcache/terraform.tfstate") ? 1 : 0
+  backend = "local"
+  config = {
+    path = "${path.root}/../04-flexcache/terraform.tfstate"
   }
 }
 
@@ -119,7 +130,25 @@ locals {
     origin = try(data.terraform_remote_state.lz[0].outputs.origin, null)
     cache  = try(data.terraform_remote_state.lz[0].outputs.cache, null)
   }
-  cloudwatch_on        = local.ready && var.telemetry && var.cloudwatch && local.buckets != null && local.results_fs != null
+  cloudwatch_on = local.ready && var.telemetry && var.cloudwatch && local.buckets != null && local.results_fs != null
+
+  # bench-ontap: needs the origin client and stack 04 (its Secrets Manager endpoint and the
+  # permission to read the fsxadmin secret on the origin client's role).
+  flexcache_out = try(data.terraform_remote_state.flexcache[0].outputs.flexcache, null)
+  fsxadmin      = try(data.terraform_remote_state.fsxn[0].outputs.fsxadmin_secret, null)
+  ontap_on      = var.telemetry && var.ontap_metrics && local.flexcache_out != null && local.fsxadmin != null && contains(keys(local.clients), "origin")
+  ontap = !local.ontap_on ? null : {
+    secret_arn    = local.fsxadmin.arn
+    secret_region = local.fsxadmin.region
+    clusters = { for side, f in local.fsx : side => {
+      mgmt_ip          = f.management_ip
+      intercluster_ips = f.intercluster_ips
+      volumes = compact(concat(
+        side == "origin" ? [f.volume_name] : [local.flexcache_out.name],
+        var.results_volume.side == side ? [var.results_volume.name] : [],
+      ))
+    } if f != null }
+  }
   cloudwatch_namespace = "FlexCacheBench"
 
   results_vol = var.telemetry ? one(concat(module.results_origin, module.results_cache)) : null
@@ -255,6 +284,7 @@ module "dashboard" {
     instance_id    = try(local.clients[side].instance_id, null)
   } if local.fsx[side] != null || contains(keys(local.clients), side) }
   results_volume_id = try(local.results.volume_id, null)
+  ontap_region      = local.ontap_on ? var.origin_region : null
 }
 
 module "telemetry" {
@@ -269,6 +299,7 @@ module "telemetry" {
   results              = local.results
   lab_info             = local.lab_info
   cloudwatch_namespace = local.cloudwatch_on ? local.cloudwatch_namespace : null
+  ontap                = local.ontap
 
   collector_version       = var.collector_version
   collector_sha256        = var.collector_sha256

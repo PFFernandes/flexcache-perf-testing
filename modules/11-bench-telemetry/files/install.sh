@@ -13,6 +13,7 @@
 #   COLLECTOR_B64  collector config, base64 (install)
 #   PROBE_B64      probe config, base64 (install)
 #   LAB_B64        lab.json for the results volume, base64 (install)
+#   ONTAP_B64      bench-ontap config ("{}" = not on this client), base64 (install)
 set -euo pipefail
 
 : "${ACTION:?}" "${REGION:?}" "${INSTANCE_ID:?}" "${REMOTE_SH:?}"
@@ -37,9 +38,9 @@ REMOTE_B64="$(b64 < "$REMOTE_SH")"
 PARAMS="$(mktemp)"
 trap 'rm -f "$PARAMS"' EXIT
 if [[ "$ACTION" == "install" ]]; then
-  : "${SETTINGS_B64:?}" "${COLLECTOR_B64:?}" "${PROBE_B64:?}" "${LAB_B64:?}"
-  printf '{"executionTimeout":["900"],"commands":["set -euo pipefail","echo %s | base64 -d > /root/bench-telemetry.sh","echo %s | base64 -d > /root/bench-telemetry.env","echo %s | base64 -d > /root/bench-collector.yaml","echo %s | base64 -d > /root/bench-probe.json","echo %s | base64 -d > /root/bench-lab.json","bash /root/bench-telemetry.sh install /root/bench-telemetry.env /root/bench-collector.yaml /root/bench-probe.json /root/bench-lab.json"]}' \
-    "$REMOTE_B64" "$SETTINGS_B64" "$COLLECTOR_B64" "$PROBE_B64" "$LAB_B64" > "$PARAMS"
+  : "${SETTINGS_B64:?}" "${COLLECTOR_B64:?}" "${PROBE_B64:?}" "${LAB_B64:?}" "${ONTAP_B64:?}"
+  printf '{"executionTimeout":["900"],"commands":["set -euo pipefail","echo %s | base64 -d > /root/bench-telemetry.sh","echo %s | base64 -d > /root/bench-telemetry.env","echo %s | base64 -d > /root/bench-collector.yaml","echo %s | base64 -d > /root/bench-probe.json","echo %s | base64 -d > /root/bench-lab.json","echo %s | base64 -d > /root/bench-ontap.json","bash /root/bench-telemetry.sh install /root/bench-telemetry.env /root/bench-collector.yaml /root/bench-probe.json /root/bench-lab.json /root/bench-ontap.json"]}' \
+    "$REMOTE_B64" "$SETTINGS_B64" "$COLLECTOR_B64" "$PROBE_B64" "$LAB_B64" "$ONTAP_B64" > "$PARAMS"
 else
   printf '{"executionTimeout":["300"],"commands":["set -euo pipefail","echo %s | base64 -d > /root/bench-telemetry.sh","bash /root/bench-telemetry.sh remove"]}' \
     "$REMOTE_B64" > "$PARAMS"

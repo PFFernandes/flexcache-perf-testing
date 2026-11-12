@@ -34,7 +34,8 @@ output "telemetry" {
   description = "null when telemetry = false or not deployed."
   value = length(module.telemetry) == 0 ? null : {
     collector_version = module.telemetry[0].collector_version
-    check_on_client   = "systemctl status otelcol-contrib bench-probe"
+    ontap_poller      = module.telemetry[0].ontap_poller == null ? "off (needs ontap_metrics = true and 04-flexcache)" : "on the ${module.telemetry[0].ontap_poller} client, watching ${jsonencode({ for k, c in local.ontap.clusters : k => c.volumes })}"
+    check_on_client   = "systemctl status otelcol-contrib bench-probe bench-ontap"
   }
 }
 

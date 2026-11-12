@@ -11,6 +11,12 @@ default FlexCacheBench; dimensions Lab, Side and the ones listed):
     NfsBytesPerSecond              Mount, Direction
     EnaAllowanceExceeded           Counter
     PingRttMs, PingLossPercent     Target
+  from bench-ontap (both clusters, polled by the origin client):
+    OntapIops, OntapLatencyUs, OntapThroughputBytes   Cluster, Volume, Op (read/write/other/total)
+    OntapNfsOps, OntapNfsLatencyUs                    Cluster, Volume, Op (main NFS operations)
+    FlexCacheMissPercent, FlexCacheRequestedBlocks, FlexCacheMissBlocks   Cluster, Volume
+    FsPingMs                       From, To, Method: latency between the file systems (ONTAP)
+    InterclusterPingMs             Cluster, Target: ICMP from the origin client (fallback)
   from each dataset's per-file timings (one entry per minute):
     DatasetBytesWritten, DatasetFilesWritten       Dataset
     DatasetOpenLatency, DatasetWriteTime, DatasetCloseLatency (values, so CloudWatch can show
@@ -42,6 +48,16 @@ BATCH = 500                       # entries per PutMetricData call (limit 1000 a
 MAX_VALUES = 150                  # distinct values per entry (CloudWatch limit)
 PUSH_OPS = {"READ", "WRITE", "COMMIT", "GETATTR", "SETATTR", "LOOKUP", "ACCESS", "OPEN", "CLOSE",
             "CREATE", "REMOVE", "RENAME", "READDIR", "READDIRPLUS"}
+ONTAP_NFS_OPS = {"getattr", "lookup", "access", "open", "read", "write", "readdir", "create_file", "setattr"}
+ONTAP_SIMPLE = {   # bench-ontap metric -> (CloudWatch name, unit, extra dimensions besides Cluster)
+    "ontap.volume.ops": ("OntapIops", "Count/Second", ("volume", "op")),
+    "ontap.volume.latency": ("OntapLatencyUs", "Microseconds", ("volume", "op")),
+    "ontap.volume.throughput": ("OntapThroughputBytes", "Bytes/Second", ("volume", "op")),
+    "ontap.flexcache.miss_percent": ("FlexCacheMissPercent", "Percent", ("volume",)),
+    "ontap.flexcache.requested_blocks": ("FlexCacheRequestedBlocks", "Count/Second", ("volume",)),
+    "ontap.flexcache.miss_blocks": ("FlexCacheMissBlocks", "Count/Second", ("volume",)),
+    "ontap.intercluster.ping_rtt": ("InterclusterPingMs", "Milliseconds", ("target",)),
+}
 
 
 # ------------------------------------------------------------------ reading OTLP JSON lines
@@ -124,6 +140,19 @@ def series_from_telemetry(points):
             out.append(("PingRttMs", "Milliseconds", (("Target", a.get("target", "")),), ts, v))
         elif name == "bench.ping.loss":
             out.append(("PingLossPercent", "Percent", (("Target", a.get("target", "")),), ts, v))
+        elif name == "ontap.fs.ping_rtt":
+            out.append(("FsPingMs", "Milliseconds", (("From", a.get("from", "")), ("To", a.get("to", "")),
+                                                     ("Method", a.get("method", ""))), ts, v))
+        elif name in ONTAP_SIMPLE:
+            metric, unit, extra = ONTAP_SIMPLE[name]
+            dims = (("Cluster", a.get("cluster", "")),) + tuple((k.capitalize(), a.get(k, "")) for k in extra)
+            out.append((metric, unit, dims, ts, v))
+        elif name in ("ontap.volume.nfs.ops", "ontap.volume.nfs.latency"):
+            if a.get("op") in ONTAP_NFS_OPS:
+                metric, unit = (("OntapNfsOps", "Count/Second") if name.endswith("ops")
+                                else ("OntapNfsLatencyUs", "Microseconds"))
+                out.append((metric, unit, (("Cluster", a.get("cluster", "")), ("Volume", a.get("volume", "")),
+                                           ("Op", a["op"])), ts, v))
     for ts, idle in cpu_idle.items():
         out.append(("CpuBusyPercent", "Percent", (), ts, 100 * (1 - sum(idle) / len(idle))))
     # Network: cumulative counters -> bytes per second, summed over interfaces.

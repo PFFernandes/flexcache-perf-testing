@@ -27,6 +27,12 @@ variable "sides" {
   }))
 }
 
+variable "ontap_region" {
+  description = "Region where bench-ontap's metrics are published (the origin client's), or null when it doesn't run: no ONTAP widgets."
+  type        = string
+  default     = null
+}
+
 variable "results_volume_id" {
   description = "vol_bench, mentioned in the header so its traffic can be told apart."
   type        = string

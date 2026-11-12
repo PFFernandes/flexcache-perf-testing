@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs ON THE EC2 CLIENT as root (sent by install.sh over SSM Run Command).
 #
-#   remote.sh install <settings.env> <collector.yaml> <probe.json> <lab.json>
+#   remote.sh install <settings.env> <collector.yaml> <probe.json> <lab.json> <ontap.json>
 #   remote.sh remove
 #
 # install: mounts the results volume (FSx for ONTAP, NFS) at $RESULTS_MOUNT, creates the local
@@ -19,11 +19,12 @@ log() { echo "[bench-telemetry] $*"; }
 ACTION="${1:?action}"
 CONF=/etc/otelcol-contrib/config.yaml
 PROBE_UNIT=/etc/systemd/system/bench-probe.service
+ONTAP_UNIT=/etc/systemd/system/bench-ontap.service
 DROPIN_DIR=/etc/systemd/system/otelcol-contrib.service.d
 FSTAB_TAG="# bench results volume (modules/11-bench-telemetry)"
 
 if [[ "$ACTION" == "remove" ]]; then
-  systemctl disable --now bench-probe otelcol-contrib 2>/dev/null || true   # flushes its last batch
+  systemctl disable --now bench-ontap bench-probe otelcol-contrib 2>/dev/null || true   # flushes its last batch
   # Final copy of everything staged, before the volume is unmounted (and later deleted + backed up).
   if [[ -r /etc/bench/bench.env ]]; then
     set -a; . /etc/bench/bench.env; set +a
@@ -35,7 +36,7 @@ if [[ "$ACTION" == "remove" ]]; then
       fi
     fi
   fi
-  rm -rf "$PROBE_UNIT" "$DROPIN_DIR" /etc/bench/probe.json /etc/bench/bench.env
+  rm -rf "$PROBE_UNIT" "$ONTAP_UNIT" "$DROPIN_DIR" /etc/bench/probe.json /etc/bench/ontap.json /etc/bench/bench.env
   systemctl daemon-reload
   if rpm -q otelcol-contrib >/dev/null 2>&1; then rpm -e otelcol-contrib; fi
   mnt="$(grep -A1 -F "$FSTAB_TAG" /etc/fstab | tail -1 | awk '{print $2}' || true)"
@@ -51,8 +52,8 @@ fi
 # shellcheck disable=SC1090
 source "${2:?settings}"   # VERSION SHA_AMD64 SHA_ARM64 BUCKET BUCKET_REGION LAB SIDE INSTANCE_ID
                           # RESULTS_SERVER RESULTS_EXPORT RESULTS_MOUNT RESULTS_OPTIONS STAGING FLUSH_S
-                          # CLOUDWATCH_NAMESPACE (- = off) CLOUDWATCH_REGION
-COLLECTOR_YAML="${3:?collector.yaml}"; PROBE_JSON="${4:?probe.json}"; LAB_JSON="${5:?lab.json}"
+                          # CLOUDWATCH_NAMESPACE (- = off) CLOUDWATCH_REGION ONTAP (1 = run bench-ontap)
+COLLECTOR_YAML="${3:?collector.yaml}"; PROBE_JSON="${4:?probe.json}"; LAB_JSON="${5:?lab.json}"; ONTAP_JSON="${6:?ontap.json}"
 TELEMETRY_DIR="$STAGING/telemetry/$LAB/$SIDE/$INSTANCE_ID"   # local; copied to the volume after tests
 
 # 1. Results volume: fstab entry (also picked up by the client's fsxn-mount timer), then mount.
@@ -147,10 +148,33 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 UNIT
+# bench-ontap: ONTAP counters of both clusters (origin client only; fsxadmin from Secrets Manager).
+if [[ "${ONTAP:-0}" == "1" ]]; then
+  install -m 0600 "$ONTAP_JSON" /etc/bench/ontap.json
+  cat > "$ONTAP_UNIT" <<'UNIT'
+[Unit]
+Description=bench-ontap: ONTAP volume, NFS and FlexCache counters for the OpenTelemetry Collector
+After=otelcol-contrib.service network-online.target
+Wants=otelcol-contrib.service
+
+[Service]
+Environment=PYTHONPATH=/opt/bench PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 -m bench.telemetry.ontap --config /etc/bench/ontap.json
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+else
+  systemctl disable --now bench-ontap 2>/dev/null || true
+  rm -f "$ONTAP_UNIT" /etc/bench/ontap.json
+fi
 systemctl daemon-reload
 systemctl enable otelcol-contrib bench-probe >/dev/null 2>&1
 systemctl restart otelcol-contrib bench-probe
-rm -f "$2" "$COLLECTOR_YAML" "$PROBE_JSON" "$LAB_JSON"
+if [[ "${ONTAP:-0}" == "1" ]]; then systemctl enable bench-ontap >/dev/null 2>&1; systemctl restart bench-ontap; fi
+rm -f "$2" "$COLLECTOR_YAML" "$PROBE_JSON" "$LAB_JSON" "$ONTAP_JSON"
 
 # 6. Checks: both services up, and telemetry being written to the volume.
 for i in $(seq 1 15); do
@@ -162,6 +186,11 @@ log "collector: healthy"
 sleep 3
 systemctl is-active --quiet bench-probe || { journalctl -u bench-probe -n 30 --no-pager; log "bench-probe is not running"; exit 1; }
 log "probe:     running"
+if [[ "${ONTAP:-0}" == "1" ]]; then
+  sleep 5
+  systemctl is-active --quiet bench-ontap || { journalctl -u bench-ontap -n 30 --no-pager; log "bench-ontap is not running"; exit 1; }
+  log "ontap:     running ($(journalctl -u bench-ontap -n 5 --no-pager -o cat | tail -1))"
+fi
 
 file="$TELEMETRY_DIR/metrics.json"
 start_size="$(stat -c %s "$file" 2>/dev/null || echo 0)"

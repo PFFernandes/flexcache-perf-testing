@@ -45,6 +45,22 @@ variable "cloudwatch_namespace" {
   default     = null
 }
 
+variable "ontap" {
+  description = "bench-ontap on the origin client: ONTAP volume, NFS and FlexCache counters and the latency between the clusters, polled with the fsxadmin credentials. null = off."
+  type = object({
+    secret_arn    = string
+    secret_region = string
+    clusters = map(object({ # origin | cache
+      mgmt_ip          = string
+      volumes          = list(string)
+      intercluster_ips = list(string)
+    }))
+    interval_s      = optional(number, 15)
+    ping_interval_s = optional(number, 30)
+  })
+  default = null
+}
+
 variable "lab_info" {
   description = "Lab description written to labs/<lab>/lab.json on the results volume."
   type        = any

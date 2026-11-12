@@ -6,6 +6,9 @@
 #     dataset reads per pass: throughput, open / first byte / whole file / close latency
 #     host CPU, memory, network; NFS round-trip and operations per NFS operation;
 #     EC2 network-limit counters; ping to both file systems
+#   ONTAP (bench-ontap on the origin client, both clusters, published in the origin region)
+#     volume latency / IOPS / throughput, NFS latency per operation, FlexCache miss %,
+#     latency between the FSx file systems (ONTAP network ping / cluster peer ping), both columns
 #   AWS (published by AWS itself)
 #     FSx for ONTAP: throughput and IOPS per volume, read/write latency, CPU and network utilization
 #     EC2: client CPU (5-minute basic monitoring)
@@ -62,6 +65,63 @@ locals {
       } : k => format("SEARCH('{AWS/FSx,FileSystemId,VolumeId} MetricName=\"%s\" FileSystemId=\"%s\"', 'Sum', 60)",
     m.metric, s.file_system_id)
   } if s.file_system_id != null }
+
+  # ONTAP metrics come from the origin client, so they live in its region for both clusters.
+  ontap_search = { for side in keys(var.sides) : side => {
+    for k, m in {
+      lat     = "OntapLatencyUs"
+      iops    = "OntapIops"
+      thr     = "OntapThroughputBytes"
+      nfs_lat = "OntapNfsLatencyUs"
+      } : k => format("SEARCH('{%s,Lab,Side,Cluster,Op,Volume} MetricName=\"%s\" Lab=\"%s\" Cluster=\"%s\"', 'Average', 60)",
+    local.ns, m, local.lab, side)
+  } }
+  flexcache_search = { for k, m in { miss = "FlexCacheMissPercent", req = "FlexCacheRequestedBlocks", missb = "FlexCacheMissBlocks" } :
+  k => format("SEARCH('{%s,Lab,Side,Cluster,Volume} MetricName=\"%s\" Lab=\"%s\" Cluster=\"cache\"', 'Average', 60)", local.ns, m, local.lab) }
+
+  ontap_widgets = { for side in keys(var.sides) : side => var.ontap_region == null ? [] : concat([
+    {
+      title   = "ONTAP ${side} cluster: volume latency per operation type (µs)"
+      region  = var.ontap_region
+      metrics = [[{ id = "olat", expression = local.ontap_search[side].lat }]]
+    },
+    {
+      title   = "ONTAP ${side} cluster: volume IOPS per operation type"
+      region  = var.ontap_region
+      metrics = [[{ id = "oiops", expression = local.ontap_search[side].iops }]]
+    },
+    {
+      title   = "ONTAP ${side} cluster: NFS latency per NFS operation (µs)"
+      region  = var.ontap_region
+      metrics = [[{ id = "onfs", expression = local.ontap_search[side].nfs_lat }]]
+    },
+    ], side != "cache" ? [] : [
+    {
+      title  = "FlexCache: cache miss % and blocks per second requested / fetched from the origin"
+      region = var.ontap_region
+      metrics = [
+        [{ id = "fmiss", expression = local.flexcache_search.miss, label = "miss %", yAxis = "right" }],
+        [{ id = "freq", expression = local.flexcache_search.req }],
+        [{ id = "fmb", expression = local.flexcache_search.missb }],
+      ]
+    },
+    ], [
+    {
+      title  = "Latency between the FSx file systems (ms), measured by ONTAP: ${side} column, both directions"
+      region = var.ontap_region
+      metrics = [
+        [{ id = "fs", expression = format("SEARCH('{%s,Lab,Side,From,Method,To} MetricName=\"FsPingMs\" Lab=\"%s\"', 'Average', 60)", local.ns, local.lab) }],
+      ]
+    },
+    ], side != "origin" ? [] : [
+    {
+      title  = "Fallback: ICMP from the origin client to both clusters' intercluster IPs (ms)"
+      region = var.ontap_region
+      metrics = [
+        [{ id = "ic", expression = format("SEARCH('{%s,Lab,Side,Cluster,Target} MetricName=\"InterclusterPingMs\" Lab=\"%s\"', 'Average', 60)", local.ns, local.lab) }],
+      ]
+    },
+  ]) }
 
   sides_order = [for side in ["origin", "cache"] : side if contains(keys(var.sides), side)]
   col         = { for side in local.sides_order : side => side == "origin" ? 0 : 12 }
@@ -192,7 +252,7 @@ locals {
 
   widgets = concat([local.header], flatten([
     for side in local.sides_order : [
-      for i, w in local.column[side] : {
+      for i, w in concat(local.column[side], local.ontap_widgets[side]) : {
         type   = "metric"
         x      = local.col[side]
         y      = 3 + i * 6
@@ -200,7 +260,7 @@ locals {
         height = 6
         properties = merge({
           title   = w.title
-          region  = var.sides[side].region
+          region  = try(w.region, var.sides[side].region)
           view    = "timeSeries"
           stacked = false
           period  = 60

@@ -22,6 +22,15 @@ the URL is in `./tf.sh 05-bench output dashboard`.
 | 13 | FSx for ONTAP read/write IOPS and latency (ms) | AWS/FSx |
 | 14 | FSx for ONTAP CPU and network utilization (%) | AWS/FSx |
 | 15 | EC2 client CPU (5-minute basic monitoring) | AWS/EC2 |
+| 16 | ONTAP (that side's cluster): volume latency per operation type (µs) | bench-ontap |
+| 17 | ONTAP: volume IOPS per operation type | bench-ontap |
+| 18 | ONTAP: NFS latency per NFS operation (µs) | bench-ontap |
+| 19 | cache: FlexCache miss % and blocks requested / fetched from the origin | bench-ontap |
+| 20 | **Latency between the FSx file systems**, measured by ONTAP (`network ping` between intercluster LIFs, `cluster peer ping`), both directions, in both columns | bench-ontap |
+| 21 | origin: fallback ICMP from the origin client to both clusters' intercluster IPs | bench-ontap |
+
+Rows 16-21 appear when `ontap_region` is set (bench-ontap runs). The origin client polls both
+clusters, so these widgets read from the origin region in both columns.
 
 - **Bench metrics** (namespace `FlexCacheBench`) arrive **when a test ends**, as one-minute
   statistics; FSx and EC2 metrics are published by AWS continuously.
@@ -38,5 +47,6 @@ the URL is in `./tf.sh 05-bench output dashboard`.
 | `namespace` | `FlexCacheBench` | |
 | `sides` | – | `{ origin = { region, file_system_id, instance_id }, cache = {...} }` |
 | `results_volume_id` | `null` | shown in the header |
+| `ontap_region` | `null` | where bench-ontap publishes (origin region); `null` = no ONTAP widgets |
 
 Outputs: `dashboard_name`, `url`.

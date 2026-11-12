@@ -1,6 +1,6 @@
 # Test bench framework – design
 
-Status: **draft v13 for review**. Built so far: sections marked "(built)" (§2.7, §2.8, §4.3, §4.5); the rest is design.
+Status: **draft v15 for review**. Built so far: sections marked "(built)" (§2.7, §2.8, §4.3, §4.5); the rest is design.
 
 The Terraform stacks build the lab (Origin, Cache, two EC2 instances, FlexCache). The test bench is
 the layer on top: it fills the volumes with datasets, runs read/write and file open/close tests from
@@ -17,6 +17,8 @@ destroyed, and lets us review it later on a dashboard.
 | v7 | Built: module 1 (Dataset, `bench/dataset`) and delivery to the clients: `modules/09-bench-deploy` + `stacks/05-bench` (§2.7). Module numbers follow the repository today (`07-ec2-client`, `08-ontap-flexcache`), so the bench's Terraform modules start at 09. |
 | v8 | **Datasets are manual**: users create, change, verify and delete them by hand on the clients (`bench-dataset`, `bench-datasets-nfs`). No state machine, Lambda or schedule touches datasets; the automation starts at the test runs (§2.6, §4). |
 | v9 | Built: results store as **stack `00-bench-store`** (not inside stack 05) and telemetry: OpenTelemetry Collector + bench-probe on the clients, writing to S3 (§2.8). Collection is continuous while a lab is up; results are lined up by time. |
+| v15 | **Latency between the FSx file systems**, measured by ONTAP in both directions: `network ping` between the intercluster LIFs and `cluster peer ping` (REST CLI passthrough; refused methods switched off), metric `FsPingMs` (From, To, Method), shown in both dashboard columns. ICMP from the origin client kept as a labelled fallback. |
+| v14 | **ONTAP counters** (`bench/telemetry/ontap.py`, `bench-ontap` on the origin client, fsxadmin): per volume of both clusters the REST `statistics` counters (IOPS, latency, throughput per op type; NFS per operation) and `flexcache_raw` (cache miss %), `cluster peer ping` if the REST CLI passthrough allows it, ICMP to the intercluster IPs. Through the Collector like the probe; on the dashboard. Replaces the Harvest plan of §7.2. |
 | v13 | **Read test on both sides** (`bench-dataset read --side origin|cache`): per file open, first byte, whole file and close; per pass the wall-clock time to read the dataset (XX GB in N files), MB/s, files/s; passes with the client cache dropped (pass 1 cold through FlexCache, pass 2 warm); `--mode first|open`. Stored as separate `reads/` files and pushed to the dashboard. Bundle delivery split into 40 KB SSM commands. |
 | v12 | **Consolidated view: an Amazon CloudWatch dashboard** per lab (`modules/14-bench-dashboard`): the bench's metrics, pushed **after each test** by `bench-results-sync` (`bench/results/cloudwatch.py`, through a CloudWatch endpoint per client VPC, `modules/13-bench-cloudwatch`), next to the AWS/FSx and AWS/EC2 metrics. Amazon Managed Grafana was ruled out (no Identity Center); `vol_bench` stays the full-resolution record. |
 | v11 | **Nothing is written to the results volume during a test.** Telemetry, dataset records and logs are staged on the client's local disk and copied to `vol_bench` after each command, by hand (`bench-results-sync`) and on destroy (§2.8). |

@@ -12,6 +12,11 @@ output "results_mount" {
   value = var.results.mount_point
 }
 
+output "ontap_poller" {
+  description = "Client running bench-ontap (origin), or null."
+  value       = local.ontap_side
+}
+
 output "collector_version" {
   value = var.collector_version
 }
