@@ -1,6 +1,6 @@
 # Test bench framework – design
 
-Status: **draft v11 for review**. Built so far: sections marked "(built)" (§2.7, §2.8, §4.3, §4.5); the rest is design.
+Status: **draft v12 for review**. Built so far: sections marked "(built)" (§2.7, §2.8, §4.3, §4.5); the rest is design.
 
 The Terraform stacks build the lab (Origin, Cache, two EC2 instances, FlexCache). The test bench is
 the layer on top: it fills the volumes with datasets, runs read/write and file open/close tests from
@@ -17,6 +17,7 @@ destroyed, and lets us review it later on a dashboard.
 | v7 | Built: module 1 (Dataset, `bench/dataset`) and delivery to the clients: `modules/09-bench-deploy` + `stacks/05-bench` (§2.7). Module numbers follow the repository today (`07-ec2-client`, `08-ontap-flexcache`), so the bench's Terraform modules start at 09. |
 | v8 | **Datasets are manual**: users create, change, verify and delete them by hand on the clients (`bench-dataset`, `bench-datasets-nfs`). No state machine, Lambda or schedule touches datasets; the automation starts at the test runs (§2.6, §4). |
 | v9 | Built: results store as **stack `00-bench-store`** (not inside stack 05) and telemetry: OpenTelemetry Collector + bench-probe on the clients, writing to S3 (§2.8). Collection is continuous while a lab is up; results are lined up by time. |
+| v12 | **Consolidated view: an Amazon CloudWatch dashboard** per lab (`modules/14-bench-dashboard`): the bench's metrics, pushed **after each test** by `bench-results-sync` (`bench/results/cloudwatch.py`, through a CloudWatch endpoint per client VPC, `modules/13-bench-cloudwatch`), next to the AWS/FSx and AWS/EC2 metrics. Amazon Managed Grafana was ruled out (no Identity Center); `vol_bench` stays the full-resolution record. |
 | v11 | **Nothing is written to the results volume during a test.** Telemetry, dataset records and logs are staged on the client's local disk and copied to `vol_bench` after each command, by hand (`bench-results-sync`) and on destroy (§2.8). |
 | v10 | **No results in S3.** Results go to an FSx for ONTAP **results volume** (`vol_bench`, origin by default) mounted on both clients, with a **final backup** when it is deleted. The S3 bucket of stack 00 only delivers the Collector package to the clients. Supersedes the S3 store of §6 and v9. |
 

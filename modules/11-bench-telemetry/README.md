@@ -30,7 +30,10 @@ The copy is `bench-results-sync` (`bench/results/sync.py`, installed by `09-benc
 root). It runs after each `bench-dataset` command and each `bench-datasets-nfs` batch, by hand, and
 on destroy. It moves finished dataset records (skipping any a running command still holds), copies
 and then removes rotated telemetry files, and copies the file the Collector is still writing as a
-snapshot. Local telemetry is capped at `local_buffer_mib` (2 GiB, in `rotate_mib` = 50 MiB files):
+snapshot. With `cloudwatch_namespace` set (stack 05, `cloudwatch = true`), it first pushes the new
+minutes of telemetry and the new dataset timings to CloudWatch (`bench/results/cloudwatch.py`, through
+the endpoint from `13-bench-cloudwatch`); a failed push is retried next time and never stops the
+copy. Local telemetry is capped at `local_buffer_mib` (2 GiB, in `rotate_mib` = 50 MiB files):
 if nothing is copied for days, the oldest local files are dropped rather than filling the disk.
 
 ## What is collected
@@ -69,6 +72,7 @@ config in `/etc/otelcol-contrib/config.yaml` and `/etc/bench/probe.json`.
 | `name`, `lab` | – | IAM policy prefix; lab name in the results paths and attributes |
 | `clients` | – | `{ side = { region, instance_id, role_name, bucket, bucket_arn, bucket_region, ping_targets } }` (bucket = package bucket of that region) |
 | `results` | – | `{ volume_id, volume_name, side, nfs_ip, junction_path, mount_point, nfs_options }` |
+| `cloudwatch_namespace` | `null` | CloudWatch namespace to push to after each test; `null` = no push |
 | `lab_info` | `{}` | content of `lab.json` |
 | `collector_version` | `0.165.0` | change together with `collector_sha256` |
 | `collector_sha256` | amd64, arm64 of 0.165.0 | from the release's `.sha256` files |

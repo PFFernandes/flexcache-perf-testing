@@ -128,7 +128,7 @@ or apply first prints the settings files it loaded, so check the regions there.
 | 2 | `./tf.sh 02-fsxn init`<br>`./tf.sh 02-fsxn plan`<br>`./tf.sh 02-fsxn apply-plan` | FSx for ONTAP Origin + Cache, SVMs, `vol_origin`, fsxadmin secret | 20-40 min, billed hourly |
 | 3 | `./tf.sh 03-ec2 init`<br>`./tf.sh 03-ec2 plan`<br>`./tf.sh 03-ec2 apply-plan` | origin and cache EC2 clients (Windows for SMB), Instance Connect + SSM endpoints | ~5 min; Windows ~10 min |
 | 4 | `./tf.sh 04-flexcache init`<br>`./tf.sh 04-flexcache plan`<br>`./tf.sh 04-flexcache apply-plan` | Secrets Manager endpoint, then on the origin client: cluster peer, SVM peer, `vol_cache`; SMB: shares `origin` and `cache` | ~5-10 min |
-| 5 (optional) | `./tf.sh 05-bench init`<br>`./tf.sh 05-bench plan`<br>`./tf.sh 05-bench apply-plan` | Test bench on the Linux clients (NFS only): `/opt/bench`, `bench-dataset`, `bench-datasets-nfs`, `bench-results-sync`; with `telemetry = true` (needs step 0) the results volume `vol_bench` on the origin FSx, mounted on both clients, and the OpenTelemetry Collector and bench-probe writing to it. Creates no datasets | ~1 min; ~5 min with telemetry |
+| 5 (optional) | `./tf.sh 05-bench init`<br>`./tf.sh 05-bench plan`<br>`./tf.sh 05-bench apply-plan` | Test bench on the Linux clients (NFS only): `/opt/bench`, `bench-dataset`, `bench-datasets-nfs`, `bench-results-sync`; with `telemetry = true` (needs step 0) the results volume `vol_bench` on the origin FSx, mounted on both clients, and the OpenTelemetry Collector and bench-probe writing to it; with `cloudwatch = true` also a CloudWatch endpoint per client VPC and the lab's CloudWatch dashboard. Creates no datasets | ~1 min; ~5 min with telemetry |
 
 During step 4 the apply prints the log of the origin client, e.g.
 `[flexcache] creating cluster peer ...`, `SVM peer state: peered`, `FlexCache vol_cache created`.
@@ -206,7 +206,9 @@ When you're done (FSx for ONTAP is billed every hour), destroy in reverse order.
 │   ├── 09-bench-deploy/       copies the test bench to the Linux clients over SSM
 │   ├── 10-bench-store/        one package bucket (delivers the Collector; no results)
 │   ├── 11-bench-telemetry/    mounts vol_bench; OpenTelemetry Collector + bench-probe writing to it
-│   └── 12-bench-results-volume/  vol_bench: the results volume, with a final backup on delete
+│   ├── 12-bench-results-volume/  vol_bench: the results volume, with a final backup on delete
+│   ├── 13-bench-cloudwatch/   CloudWatch endpoint + PutMetricData for one client VPC
+│   └── 14-bench-dashboard/    the lab's CloudWatch dashboard (bench + FSx + EC2 metrics)
 ├── stacks/                    what you deploy, one local state file each
 │   ├── 00-bench-store/        optional, once per account: the package bucket(s)
 │   ├── 01-landing-zone/
@@ -256,7 +258,7 @@ modules:  01-network-origin ──┐                                 ┌──�
 | 03 | `03-ec2` | 01: subnets, AD Admin secret (SMB) · 02: SVM NFS IPs / SMB names, junction paths | `07-ec2-client` |
 | 04 | `04-flexcache` | 01: origin VPC · 02: management/intercluster IPs, SVMs, fsxadmin secret · 03: origin client | `08-ontap-flexcache` |
 | 00 | `00-bench-store` (optional, once) | – | `10-bench-store` |
-| 05 | `05-bench` (optional) | 03: Linux clients, regions, roles · telemetry: 00: package buckets, 02: file systems, NFS IPs | `09-bench-deploy`, `12-bench-results-volume`, `11-bench-telemetry` |
+| 05 | `05-bench` (optional) | 03: Linux clients, regions, roles · telemetry: 00: package buckets, 01: VPCs (CloudWatch endpoints), 02: file systems, NFS IPs | `09-bench-deploy`, `12-bench-results-volume`, `13-bench-cloudwatch`, `14-bench-dashboard`, `11-bench-telemetry` |
 
 | # | Module | Side | Needs |
 |---|---|---|---|
@@ -272,6 +274,8 @@ modules:  01-network-origin ──┐                                 ┌──�
 | 10 | `10-bench-store` | per region | – (one package bucket) |
 | 11 | `11-bench-telemetry` | both | 07: clients and roles · 09: `/opt/bench` · 10: the package bucket of each client's region · 12: the results volume |
 | 12 | `12-bench-results-volume` | origin (or cache) | 05/06: the file system and its SVM |
+| 13 | `13-bench-cloudwatch` | both | 01: the client's VPC and subnet · 07: the client role |
+| 14 | `14-bench-dashboard` | origin region | 05/06: file system IDs · 07: instance IDs · 12: the results volume ID |
 
 The cache client's `/mnt/fsxn/vol_cache` (or `X:` for SMB) is configured in step 3 but only
 appears once step 4 has created the FlexCache volume (the client retries every minute).
@@ -471,7 +475,25 @@ All commands, sizes and options: [bench/dataset/README.md](bench/dataset/README.
 
 ### Consulting the results
 
-Everything is on the results volume, readable from **either client** (log in with the command
+**The consolidated view: the CloudWatch dashboard** (`cloudwatch = true`, the default). One page per
+lab, `<creator>-<project>-bench`, origin on the left and cache on the right:
+
+- the bench's own metrics: dataset write throughput, open/write/close latency (p50, p99), client
+  CPU, memory and network, NFS round-trip and operations per NFS operation, EC2 network-limit
+  counters, ping to both file systems;
+- next to AWS's own: FSx for ONTAP throughput and IOPS per volume, read/write latency, CPU and
+  network utilization, and the clients' EC2 CPU.
+
+```bash
+./tf.sh 05-bench output dashboard      # the dashboard URL (AWS console, normal IAM sign-in)
+```
+
+The bench's metrics are pushed **after each test**, by `bench-results-sync`, at the same moment the
+results are copied to `vol_bench`: a test shows up on the dashboard when it ends, and nothing extra
+happens during it. They are one-minute statistics, kept by CloudWatch for 15 days at that
+resolution (5-minute for 63 days, hourly for 15 months). Details: `modules/14-bench-dashboard`.
+
+**The full record: the results volume**, readable from **either client** (log in with the command
 from `./tf.sh 05-bench output`):
 
 ```
@@ -520,9 +542,9 @@ What works today:
   for name, n in sorted(c.items()): print(f"{n:>8}  {name}")'
   ```
 
-- **FSx for ONTAP and EC2 metrics:** in CloudWatch (console → CloudWatch → Metrics → `AWS/FSx` and
-  `AWS/EC2`), for the dataset's time window (`started` / `finished` in its `dataset.json`). They are
-  not copied to `vol_bench` yet, and CloudWatch keeps 1-minute data for 15 days only.
+- **FSx for ONTAP and EC2 metrics:** on the dashboard, or in CloudWatch → Metrics → `AWS/FSx` and
+  `AWS/EC2` for the dataset's time window (`started` / `finished` in its `dataset.json`). They are
+  not copied to `vol_bench`, and CloudWatch keeps 1-minute data for 15 days only.
 
 **After the lab is destroyed**, the results are in the final backup of `vol_bench`. To look at them
 again, a lab (at least `02-fsxn` and one client) must be running; restore the backup as a new volume
@@ -538,13 +560,8 @@ Then on a client: `sudo mkdir -p /mnt/fsxn/vol_bench_restored && sudo mount <svm
 /mnt/fsxn/vol_bench_restored`. Delete the restored volume afterwards (`aws fsx delete-volume`);
 it is not managed by Terraform.
 
-**Planned: `bench-report`.** One command on the origin client that turns a dataset or test into a
-single self-contained HTML page with every source on one shared time axis (client latency, host
-CPU/memory/network, NFS round-trip per operation, EC2 network limits, ping, and the FSx and EC2
-CloudWatch metrics for the same window, pulled through a CloudWatch endpoint and saved on
-`vol_bench`). Reports go to `vol_bench/reports/` and are viewed on the operator machine through an
-SSM port-forwarding tunnel (`http://localhost:8080`), with no public access. Grafana can be added
-later on the same data if ad-hoc exploration across many runs is needed.
+**Planned: `bench-report`.** A self-contained HTML page per dataset or test, from `vol_bench`, for
+reviews beyond CloudWatch's retention or after the lab is gone (with a restored backup).
 
 ## Settings
 
@@ -558,7 +575,7 @@ Module variables are never set directly: each stack fills them in. You only edit
 | `stacks/02-fsxn/terraform.tfvars` | `origin_fsxn` / `cache_fsxn` (default SINGLE_AZ_1, 128 MB/s, 1024 GiB), `origin_volume` (default `vol_origin`, FlexGroup, 800 GiB, storage efficiency on); SMB: `svm_netbios_names` (`origin`, `cache`) |
 | `stacks/03-ec2/terraform.tfvars` | `origin_ec2` / `cache_ec2`, `instance_type` (`t3.small` Linux, `t3.medium` Windows), `enable_eice` / `enable_ssm`, `nfs_options`, `cache_mounts_origin`; SMB: `domain_join` (`true`), `smb_drives` (`O`, `X`) |
 | `stacks/00-bench-store/terraform.tfvars` | `noncurrent_version_days` (30): the package bucket |
-| `stacks/05-bench/terraform.tfvars` | `bench_clients` (`origin`, `cache`), `install_packages` (none; e.g. `python3-pyyaml`), `run_tests` (`true`), `telemetry` (`true`), `results_volume` (`side = "origin"`, `name = "vol_bench"`, `size_gib = 100`), `telemetry_interval_s` (5), `ping_interval_s` (10), `collector_version` (`0.165.0`), `collector_architectures` (`amd64`) |
+| `stacks/05-bench/terraform.tfvars` | `bench_clients` (`origin`, `cache`), `install_packages` (none; e.g. `python3-pyyaml`), `run_tests` (`true`), `telemetry` (`true`), `cloudwatch` (`true`), `results_volume` (`side = "origin"`, `name = "vol_bench"`, `size_gib = 100`), `telemetry_interval_s` (5), `ping_interval_s` (10), `collector_version` (`0.165.0`), `collector_architectures` (`amd64`) |
 | `stacks/04-flexcache/terraform.tfvars` | `flexcache_name` (`vol_cache`), `flexcache_size_gib` (500), `flexcache_junction_path`, `cache_aggregates`, `create_secrets_endpoint`; SMB: `share_names` (`origin`, `cache`) |
 
 The stack files are optional; without them every value has a default. `tf.sh` passes
@@ -775,6 +792,10 @@ gone.
 - **Test bench:** the results volume `vol_bench` (100 GiB SSD by default) is billed as FSx for ONTAP
   SSD storage on the origin file system; its **final backup** as FSx backup storage, until you
   delete it. The package bucket only holds the 118 MB Collector package per region.
+  - **CloudWatch** (`cloudwatch = true`): one `monitoring` interface endpoint per client VPC (about
+    USD 0.01/h each), and the bench's custom metrics, about USD 0.30 per metric per month, prorated
+    by the hour. Each NFS operation per mount is its own metric, so a lab has a few hundred: roughly
+    USD 50-150 a month while it runs. Set `cloudwatch = false` to skip it.
 - **SMB only:**
   - **AWS Managed Microsoft AD** is billed per domain controller hour, and there are always two.
     An older AWS estimate puts Standard Edition at about USD 0.14/h; check the

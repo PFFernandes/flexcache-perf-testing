@@ -39,6 +39,12 @@ variable "results" {
   })
 }
 
+variable "cloudwatch_namespace" {
+  description = "CloudWatch namespace the clients push their test metrics to after each test (modules/13-bench-cloudwatch gives them the endpoint and permission). null = no push."
+  type        = string
+  default     = null
+}
+
 variable "lab_info" {
   description = "Lab description written to labs/<lab>/lab.json on the results volume."
   type        = any

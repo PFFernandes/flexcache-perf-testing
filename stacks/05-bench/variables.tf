@@ -160,3 +160,9 @@ variable "results_volume" {
     error_message = "results_volume.side must be origin or cache."
   }
 }
+
+variable "cloudwatch" {
+  description = "With telemetry: a CloudWatch endpoint in each client VPC, permission to push to the FlexCacheBench namespace, and the lab's CloudWatch dashboard. The clients push each test's metrics after the test."
+  type        = bool
+  default     = true
+}

@@ -23,6 +23,10 @@ results_volume = {
   size_gib = 100
 }
 
+# CloudWatch dashboard: bench metrics (pushed after each test) next to the FSx and EC2 metrics.
+# Adds a CloudWatch endpoint per client VPC (~USD 0.01/h each) and custom metrics.
+cloudwatch = true
+
 telemetry_interval_s = 5  # host metrics, NFS and ENA counters
 ping_interval_s      = 10 # ping to both file systems' NFS IPs
 

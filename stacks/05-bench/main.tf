@@ -9,6 +9,10 @@
 #                                                Collector + bench-probe write to it, and so do the
 #                                                dataset records. Nothing goes to S3.
 #
+#   cloudwatch modules/13-bench-cloudwatch        CloudWatch endpoint + PutMetricData per client VPC;
+#   (cloudwatch = true)                          bench-results-sync pushes each test's metrics AFTER it
+#              modules/14-bench-dashboard        one dashboard: bench + FSx + EC2 metrics, both sides
+#
 # Needs: the clients with SSM (03-ec2) on protocol = "nfs"; for telemetry also the file systems
 # (02-fsxn) and the package bucket (00-bench-store), which only delivers the Collector package
 # (the clients have no internet). FlexCache (04) is not required, but the cache client's
@@ -29,6 +33,14 @@ data "terraform_remote_state" "fsxn" {
   backend = "local"
   config = {
     path = "${path.root}/../02-fsxn/terraform.tfstate"
+  }
+}
+
+data "terraform_remote_state" "lz" {
+  count   = var.telemetry && var.cloudwatch ? 1 : 0
+  backend = "local"
+  config = {
+    path = "${path.root}/../01-landing-zone/terraform.tfstate"
   }
 }
 
@@ -102,6 +114,13 @@ locals {
       mounts      = try(local.available[side].mounts, {})
     } }
   }
+
+  networks = {
+    origin = try(data.terraform_remote_state.lz[0].outputs.origin, null)
+    cache  = try(data.terraform_remote_state.lz[0].outputs.cache, null)
+  }
+  cloudwatch_on        = local.ready && var.telemetry && var.cloudwatch && local.buckets != null && local.results_fs != null
+  cloudwatch_namespace = "FlexCacheBench"
 
   results_vol = var.telemetry ? one(concat(module.results_origin, module.results_cache)) : null
   results = local.results_vol == null ? null : {
@@ -192,17 +211,64 @@ module "results_cache" {
   depends_on = [terraform_data.prerequisites]
 }
 
+# CloudWatch endpoint + permission in each client's VPC, so the client can push after each test.
+module "cloudwatch_origin" {
+  count  = local.cloudwatch_on && contains(keys(local.clients), "origin") && local.networks.origin != null ? 1 : 0
+  source = "../../modules/13-bench-cloudwatch"
+
+  providers = { aws = aws.origin }
+
+  name             = "${local.name_prefix}-origin-bench"
+  vpc_id           = local.networks.origin.vpc_id
+  vpc_cidr         = local.networks.origin.vpc_cidr
+  subnet_id        = local.networks.origin.private_subnet_ids[0]
+  client_role_name = local.available.origin.role_name
+  namespace        = local.cloudwatch_namespace
+}
+
+module "cloudwatch_cache" {
+  count  = local.cloudwatch_on && contains(keys(local.clients), "cache") && local.networks.cache != null ? 1 : 0
+  source = "../../modules/13-bench-cloudwatch"
+
+  providers = { aws = aws.cache }
+
+  name             = "${local.name_prefix}-cache-bench"
+  vpc_id           = local.networks.cache.vpc_id
+  vpc_cidr         = local.networks.cache.vpc_cidr
+  subnet_id        = local.networks.cache.private_subnet_ids[0]
+  client_role_name = local.available.cache.role_name
+  namespace        = local.cloudwatch_namespace
+}
+
+module "dashboard" {
+  count  = local.cloudwatch_on ? 1 : 0
+  source = "../../modules/14-bench-dashboard"
+
+  providers = { aws = aws.origin }
+
+  dashboard_name = "${local.name_prefix}-bench"
+  lab            = local.lab
+  namespace      = local.cloudwatch_namespace
+  sides = { for side in ["origin", "cache"] : side => {
+    region         = side == "origin" ? var.origin_region : var.cache_region
+    file_system_id = try(local.fsx[side].file_system_id, null)
+    instance_id    = try(local.clients[side].instance_id, null)
+  } if local.fsx[side] != null || contains(keys(local.clients), side) }
+  results_volume_id = try(local.results.volume_id, null)
+}
+
 module "telemetry" {
   count  = local.ready && var.telemetry && local.buckets != null && local.results_fs != null ? 1 : 0
   source = "../../modules/11-bench-telemetry"
 
   providers = { aws = aws.origin }
 
-  name     = local.name_prefix
-  lab      = local.lab
-  clients  = local.telemetry_clients
-  results  = local.results
-  lab_info = local.lab_info
+  name                 = local.name_prefix
+  lab                  = local.lab
+  clients              = local.telemetry_clients
+  results              = local.results
+  lab_info             = local.lab_info
+  cloudwatch_namespace = local.cloudwatch_on ? local.cloudwatch_namespace : null
 
   collector_version       = var.collector_version
   collector_sha256        = var.collector_sha256
@@ -210,6 +276,7 @@ module "telemetry" {
   interval_s              = var.telemetry_interval_s
   ping_interval_s         = var.ping_interval_s
 
-  # bench-probe runs from /opt/bench, so the bench goes first.
-  depends_on = [module.bench]
+  # bench-probe runs from /opt/bench, so the bench goes first. The CloudWatch endpoint and
+  # permission must exist while it runs, also on destroy (the final copy pushes too).
+  depends_on = [module.bench, module.cloudwatch_origin, module.cloudwatch_cache]
 }

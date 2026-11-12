@@ -19,7 +19,8 @@ terraform.rc
 *.tfvars.bak
 
 # --- Benchmark output ---
-results/
+# Local results folder at the repository root only (bench/results/ is code).
+/results/
 
 # --- OS / editor ---
 .DS_Store

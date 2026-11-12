@@ -90,6 +90,8 @@ locals {
     "RESULTS_MOUNT=${var.results.mount_point}",
     "RESULTS_OPTIONS=${var.results.nfs_options}",
     "STAGING=${var.staging_dir}",
+    "CLOUDWATCH_NAMESPACE=${coalesce(var.cloudwatch_namespace, "-")}",
+    "CLOUDWATCH_REGION=${c.region}",
     "FLUSH_S=${var.flush_s}",
     "",
   ]) }

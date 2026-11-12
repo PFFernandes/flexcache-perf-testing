@@ -37,3 +37,12 @@ output "telemetry" {
     check_on_client   = "systemctl status otelcol-contrib bench-probe"
   }
 }
+
+output "dashboard" {
+  description = "The lab's CloudWatch dashboard. null when cloudwatch = false or not deployed."
+  value = length(module.dashboard) == 0 ? null : {
+    name = module.dashboard[0].dashboard_name
+    url  = module.dashboard[0].url
+    note = "Bench metrics appear after each test (bench-results-sync); FSx and EC2 metrics live."
+  }
+}

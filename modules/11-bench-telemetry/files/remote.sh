@@ -51,6 +51,7 @@ fi
 # shellcheck disable=SC1090
 source "${2:?settings}"   # VERSION SHA_AMD64 SHA_ARM64 BUCKET BUCKET_REGION LAB SIDE INSTANCE_ID
                           # RESULTS_SERVER RESULTS_EXPORT RESULTS_MOUNT RESULTS_OPTIONS STAGING FLUSH_S
+                          # CLOUDWATCH_NAMESPACE (- = off) CLOUDWATCH_REGION
 COLLECTOR_YAML="${3:?collector.yaml}"; PROBE_JSON="${4:?probe.json}"; LAB_JSON="${5:?lab.json}"
 TELEMETRY_DIR="$STAGING/telemetry/$LAB/$SIDE/$INSTANCE_ID"   # local; copied to the volume after tests
 
@@ -125,6 +126,10 @@ BENCH_SIDE=$SIDE
 BENCH_RESULTS_DIR=$RESULTS_MOUNT
 BENCH_STAGING=$STAGING
 ENV
+if [[ "${CLOUDWATCH_NAMESPACE:--}" != "-" ]]; then
+  # bench-results-sync pushes each test's metrics to CloudWatch after the test.
+  printf 'BENCH_CLOUDWATCH_REGION=%s\nBENCH_CLOUDWATCH_NAMESPACE=%s\n' "$CLOUDWATCH_REGION" "$CLOUDWATCH_NAMESPACE" >> /etc/bench/bench.env
+fi
 chmod 0644 /etc/bench/bench.env
 install -m 0644 "$PROBE_JSON" /etc/bench/probe.json
 cat > "$PROBE_UNIT" <<'UNIT'
