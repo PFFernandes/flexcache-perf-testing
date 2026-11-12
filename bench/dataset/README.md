@@ -85,7 +85,10 @@ bench-datasets-nfs --background all                   # keeps running after you 
   mind too when the cache will read them.
 - Each size becomes its own dataset (`ds-<size>-<utc time>`) with its own manifest and per-file
   timings. It stops at the first failure unless `--keep-going`.
-- `--background` writes the output to `~/bench-results/logs/datasets-nfs-<time>.log` and prints the
+- With the results volume, all records and the log are copied to `vol_bench` **once, after the
+  last size**, not between sizes.
+- `--background` writes the output to `/var/lib/bench/staging/logs/datasets-nfs-<user>-<time>.log`
+  (copied to `vol_bench/logs/` at the end; `~/bench-results/logs/` without the results volume) and prints the
   `tail -f` command. Use it for anything that takes longer than your SSM session.
 - `--scale F` writes F × each total with the same file size, for trial runs. Below 0.0034 the
   2xlarge size holds less than one 1 GiB file and becomes one shorter file (the script warns).
@@ -116,8 +119,15 @@ Verifying on the origin after a cache-side modify checks that the change arrived
 
 ## What it records
 
-In `~/bench-results/datasets/<dataset-id>/` with `bench-dataset`, `results/datasets/<dataset-id>/` with
-`python3 -m bench.dataset` (change with `$BENCH_OUT`, or `--out`, which goes **before** the command):
+On the clients with the results volume (stack 05 with `telemetry = true`): **while the command
+runs**, in the local staging folder `/var/lib/bench/staging/datasets/<dataset-id>/`; **when it
+ends**, the `bench-dataset` command copies them to `/mnt/fsxn/vol_bench/datasets/<dataset-id>/`
+(and removes the local copy). Nothing is written to the results volume during a test. Records on
+`vol_bench` are shared by every user and both clients; a command reads them back from there before
+it starts. `list` shows where each dataset is (`[staged]` or `[vol_bench]`). Without the results volume, in
+`~/bench-results/datasets/<dataset-id>/` of the user. With `python3 -m bench.dataset` elsewhere, in
+`results/datasets/<dataset-id>/`. `$BENCH_OUT`, or `--out` (which goes **before** the command),
+overrides all of these:
 
 | File | Content |
 |---|---|
@@ -125,10 +135,9 @@ In `~/bench-results/datasets/<dataset-id>/` with `bench-dataset`, `results/datas
 | `manifest-g<N>.csv.gz` | Every file after generation N: index, path, size, SHA-256 (if checksummed), state. |
 | `ops-g<N>.csv.gz` | One row per file operation: timestamp and the time of open, I/O, fsync and close in microseconds. |
 
-`modify`, `verify`, `delete` and `list` need these records, so run them **as the same user on the
-same client** that created the dataset, or point everyone at one folder with `BENCH_OUT`. The
-records stay on the client and are deleted with it; uploading them to the results store comes with
-the Tooling module.
+`modify`, `verify`, `delete` and `list` need these records. On the results volume anyone can use
+them from either client, and they are kept in the volume's final backup when the lab is destroyed.
+In `~/bench-results` they work only for that user on that client, and are deleted with the client.
 
 ## Tests
 

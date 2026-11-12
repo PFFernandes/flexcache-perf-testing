@@ -11,6 +11,7 @@ Generation 0 is the creation; each modify adds one.
 from __future__ import annotations
 
 import csv
+import fcntl
 import gzip
 import json
 import os
@@ -32,6 +33,19 @@ class Store:
 
     def exists(self) -> bool:
         return os.path.exists(self.path("dataset.json"))
+
+    def hold(self) -> None:
+        """Lock this dataset folder for the rest of the command (released when the process ends).
+
+        bench-results-sync skips a held folder, so records are never moved to the results
+        volume while a command is still writing them.
+        """
+        os.makedirs(self.dir, exist_ok=True)
+        self._lock = open(self.path(".lock"), "a")
+        try:
+            fcntl.flock(self._lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            raise RuntimeError(f"dataset {self.id} is in use by another command")
 
     def load(self) -> dict:
         with open(self.path("dataset.json")) as fh:

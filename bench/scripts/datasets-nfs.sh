@@ -26,7 +26,8 @@
 #   --allow-non-nfs write to a non-NFS folder (for testing the script only)
 #
 # Every dataset is created with `bench-dataset create`, so each one gets its own
-# id (ds-<size>-<utc time>), manifest and per-file timings in ~/bench-results/datasets.
+# id (ds-<size>-<utc time>), manifest and per-file timings. With the results volume they are
+# staged locally while writing and copied to /mnt/fsxn/vol_bench/datasets after the last size.
 set -euo pipefail
 
 SIZES=(small 2xsmall medium 2xmedium large 2xlarge)
@@ -35,9 +36,29 @@ SPACE_MARGIN_PCT=10
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BENCH_HOME="${BENCH_HOME:-$(cd "$HERE/../.." && pwd)}"
 export BENCH_HOME
-export BENCH_OUT="${BENCH_OUT:-$HOME/bench-results/datasets}"
 export PYTHONPATH="$BENCH_HOME${PYTHONPATH:+:$PYTHONPATH}"
 export PYTHONDONTWRITEBYTECODE=1
+# Results volume (modules/11-bench-telemetry): records and logs are staged locally during the
+# run and copied to the volume once, after the last size (nothing touches it while writing).
+if [[ -r /etc/bench/bench.env ]]; then set -a; . /etc/bench/bench.env; set +a; fi
+if [[ -n "${BENCH_STAGING:-}" ]]; then
+  umask 000
+  LOG_DIR="$BENCH_STAGING/logs"
+else
+  export BENCH_OUT="${BENCH_OUT:-$HOME/bench-results/datasets}"
+  LOG_DIR="$HOME/bench-results/logs"
+fi
+COPIED=false
+copy_results() {
+  [[ -n "${BENCH_STAGING:-}" && -z "${BENCH_NO_SYNC:-}" ]] || return 0
+  log "copying the results to the results volume"
+  if command -v bench-results-sync >/dev/null; then
+    bench-results-sync && COPIED=true
+  else
+    sudo -n env PYTHONPATH="$BENCH_HOME" python3 -m bench.results.sync && COPIED=true
+  fi
+  $COPIED || log "WARNING: the copy failed; copy them later with: bench-results-sync"
+}
 bench_dataset() { python3 -m bench.dataset "$@"; }
 
 usage() { sed -n '2,26p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
@@ -90,8 +111,8 @@ fi
 
 # --- background: re-run under nohup with a log file -----------------------------------
 if $BACKGROUND; then
-  mkdir -p "$HOME/bench-results/logs"
-  logfile="$HOME/bench-results/logs/datasets-nfs-$(date -u +%Y%m%d-%H%M%S).log"
+  mkdir -p "$LOG_DIR"
+  logfile="$LOG_DIR/datasets-nfs-$(id -un)-$(date -u +%Y%m%d-%H%M%S).log"
   rest=()
   for a in "${ORIG_ARGS[@]}"; do [[ "$a" == --background ]] || rest+=("$a"); done
   nohup bash "${BASH_SOURCE[0]}" "${rest[@]}" > "$logfile" 2>&1 < /dev/null &
@@ -124,7 +145,12 @@ need_margin=$(( need + need * SPACE_MARGIN_PCT / 100 ))
 
 log "target  $TARGET ($fstype from $source)"
 log "options $options"
-log "side    $SIDE, scale $SCALE, records in $BENCH_OUT"
+if [[ -n "${BENCH_STAGING:-}" ]]; then
+  records="$BENCH_STAGING/datasets while writing, then $BENCH_RESULTS_DIR/datasets"
+else
+  records="$BENCH_OUT"
+fi
+log "side    $SIDE, scale $SCALE, records in $records"
 for i in "${!selected[@]}"; do
   log "  $(printf '%-9s' "${selected[$i]}") $(human "${totals[$i]}")"
 done
@@ -172,7 +198,11 @@ for i in "${!selected[@]}"; do
 done
 
 $DRY && { log "dry run: nothing written"; exit 0; }
+copy_results
 log "summary"
 for r in "${results[@]}"; do echo "  $r"; done
-log "records: $BENCH_OUT   (list them with: bench-dataset list)"
+if [[ -z "${BENCH_STAGING:-}" ]]; then where="$BENCH_OUT"
+elif $COPIED; then where="$BENCH_RESULTS_DIR/datasets (results volume)"
+else where="$BENCH_STAGING/datasets (staged, not copied yet)"; fi
+log "records: $where   (list them with: bench-dataset list)"
 [[ $failed -eq 0 ]] || exit 1

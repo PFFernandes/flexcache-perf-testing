@@ -25,6 +25,40 @@ MODES = ("create", "overwrite", "append", "metadata")
 META_OPS = ("rename", "chmod", "delete")
 
 
+
+def default_out() -> str:
+    """Where a command writes records: $BENCH_OUT, else the client's staging folder
+    ($BENCH_STAGING/datasets, copied to the results volume after the command), else ./results/datasets.
+
+    Records are never written to the results volume while a command runs.
+    """
+    if os.environ.get("BENCH_OUT"):
+        return os.environ["BENCH_OUT"]
+    if os.environ.get("BENCH_STAGING"):
+        return os.path.join(os.environ["BENCH_STAGING"], "datasets")
+    return "results/datasets"
+
+
+def shared_dir():
+    """The results volume's datasets folder ($BENCH_RESULTS_DIR/datasets), if there is one."""
+    base = os.environ.get("BENCH_RESULTS_DIR")
+    path = os.path.join(base, "datasets") if base else None
+    return path if path and os.path.isdir(path) else None
+
+
+def _fetch(out: str, dataset_id: str) -> None:
+    """Copy a dataset's records from the results volume to `out`, if they are only there.
+
+    Reading happens before the command starts its work; nothing is written to the volume.
+    """
+    shared = shared_dir()
+    if not shared or os.path.exists(os.path.join(out, dataset_id, "dataset.json")):
+        return
+    src = os.path.join(shared, dataset_id)
+    if os.path.exists(os.path.join(src, "dataset.json")):
+        shutil.copytree(src, os.path.join(out, dataset_id), dirs_exist_ok=True,
+                        ignore=shutil.ignore_patterns(".lock", "*.sync-tmp"))
+
 class Fail(Exception):
     pass
 
@@ -100,6 +134,7 @@ def _mkdirs(root: str, entries: list) -> float:
     return round(time.perf_counter() - start, 3)
 
 
+
 # ---------------------------------------------------------------- plan / create
 
 def cmd_plan(args) -> int:
@@ -119,6 +154,11 @@ def cmd_create(args) -> int:
         raise Fail(f"target {args.target} is not a directory (is the volume mounted?)")
     dataset_id = args.id or f"ds-{spec['name']}-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}"
     store, root = Store(args.out, dataset_id), os.path.join(args.target, dataset_id)
+    shared = shared_dir()
+    if shared and os.path.exists(os.path.join(shared, dataset_id, "dataset.json")) and not args.resume:
+        raise Fail(f"dataset {dataset_id} already exists on the results volume (use --resume or another --id)")
+    if args.resume:
+        _fetch(args.out, dataset_id)
     if store.exists() and not args.resume:
         raise Fail(f"{store.dir} already exists (use --resume to continue it, or another --id)")
     if os.path.exists(root) and not args.resume:
@@ -129,6 +169,7 @@ def cmd_create(args) -> int:
         print(f"dry run: would write {root}")
         return 0
 
+    store.hold()
     print(f"writing {root}")
     os.makedirs(root, exist_ok=True)
     with open(os.path.join(root, MARKER), "w") as fh:
@@ -161,9 +202,12 @@ def cmd_create(args) -> int:
 # ---------------------------------------------------------------- modify
 
 def _open(args) -> tuple:
+    _fetch(args.out, args.dataset)
     store = Store(args.out, args.dataset)
     if not store.exists():
-        raise Fail(f"no dataset {args.dataset} in {args.out} (see: list)")
+        where = args.out + (f" or {shared_dir()}" if shared_dir() else "")
+        raise Fail(f"no dataset {args.dataset} in {where} (see: list)")
+    store.hold()
     meta = store.load()
     if meta.get("deleted"):
         raise Fail(f"dataset {args.dataset} was deleted on {meta['deleted']}")
@@ -315,19 +359,26 @@ def cmd_delete(args) -> int:
 
 
 def cmd_list(args) -> int:
-    if not os.path.isdir(args.out):
-        print(f"no datasets in {args.out}")
-        return 0
-    for name in sorted(os.listdir(args.out)):
-        store = Store(args.out, name)
-        if not store.exists():
+    """Datasets in the staging folder (this client, not yet copied) and on the results volume."""
+    places = [(args.out, "staged")]
+    if shared_dir() and os.path.abspath(shared_dir()) != os.path.abspath(args.out):
+        places.append((shared_dir(), "vol_bench"))
+    seen, rows = set(), []
+    for folder, label in places:
+        if not os.path.isdir(folder):
             continue
-        meta = store.load()
-        last = meta["generations"][-1]
-        entries = [e for e in store.read_manifest(last["gen"]) if e["state"] == "present"]
-        state = f"deleted {meta['deleted']}" if meta.get("deleted") else last["target"]
-        print(f"{meta['id']}  g{last['gen']}  {len(entries)} files  "
-              f"{format_size(sum(e['size'] for e in entries))}  {state}")
+        for name in sorted(os.listdir(folder)):
+            store = Store(folder, name)
+            if name in seen or not store.exists():
+                continue
+            seen.add(name)
+            meta = store.load()
+            last = meta["generations"][-1]
+            entries = [e for e in store.read_manifest(last["gen"]) if e["state"] == "present"]
+            state = f"deleted {meta['deleted']}" if meta.get("deleted") else last["target"]
+            rows.append(f"{meta['id']}  g{last['gen']}  {len(entries)} files  "
+                        f"{format_size(sum(e['size'] for e in entries))}  {state}  [{label}]")
+    print("\n".join(rows) if rows else f"no datasets in {' or '.join(f for f, _ in places)}")
     return 0
 
 
@@ -343,8 +394,9 @@ def _sizing(p) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="bench dataset", description=__doc__.strip().splitlines()[0])
-    parser.add_argument("--out", default=os.environ.get("BENCH_OUT", "results/datasets"),
-                        help="where dataset records are kept (default: $BENCH_OUT or results/datasets; now %(default)s)")
+    parser.add_argument("--out", default=default_out(),
+                        help="where dataset records are kept (default: $BENCH_OUT, else $BENCH_RESULTS_DIR/datasets "
+                             "on the results volume, else results/datasets; now %(default)s)")
     sub = parser.add_subparsers(dest="command", required=True)
 
     for name, func, text in (("plan", cmd_plan, "show what a spec would create, without writing"),
@@ -411,6 +463,6 @@ def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
-    except (Fail, specmod.SpecError, ValueError) as exc:
+    except (Fail, specmod.SpecError, ValueError, RuntimeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

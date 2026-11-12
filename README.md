@@ -3,7 +3,8 @@
 Terraform automation that builds an **FSx for ONTAP Origin** and an **FSx for ONTAP Cache**, adds a
 test client on each side, and connects the two file systems with **FlexCache**.
 
-- **Layers you deploy one at a time:** four stacks, each with its own state.
+- **Layers you deploy one at a time:** four lab stacks (01-04), each with its own state, plus the
+  optional test bench (00 and 05).
 - **Origin, Cache or both:** two switches in `common.tfvars`.
 - **NFS or SMB:** `protocol` in `common.tfvars`. NFS (default) uses Linux clients; SMB adds an AWS
   Managed Microsoft AD, Windows clients and the shares `origin` and `cache`.
@@ -12,6 +13,10 @@ test client on each side, and connects the two file systems with **FlexCache**.
 - **FlexCache is configured from the origin client:** Terraform sends it a script with SSM
   Run Command, and the client creates the cluster peer, SVM peer and FlexCache volume through the
   ONTAP REST API.
+- **Optional test bench** ([details](#test-bench-stack-05)): commands on the clients to create
+  datasets by hand (six t-shirt sizes, 10 GiB to 300 GiB), and the OpenTelemetry Collector on both
+  clients recording host, NFS and network metrics onto a results volume (`vol_bench`, FSx for
+  ONTAP) that FSx backs up when the lab is destroyed.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/architecture-dark.svg">
@@ -44,16 +49,18 @@ test client on each side, and connects the two file systems with **FlexCache**.
 
 | Stack | What it deploys | Status |
 |---|---|---|
+| `00-bench-store` (optional, once) | Package bucket(s) that deliver the OpenTelemetry Collector to the clients (no results) | 🧪 not yet run on AWS |
 | `01-landing-zone` | Network Origin, Network Cache, VPC peering | ✅ ready |
 | `02-fsxn` | FSx for ONTAP Origin and Cache, shared fsxadmin secret | ✅ ready |
 | `03-ec2` | Test client on the Origin and/or Cache (Linux for NFS, Windows for SMB) | ✅ ready |
 | `04-flexcache` | Cluster peer, SVM peer, FlexCache volume, SMB shares (run on the origin client) | ✅ ready |
-| `05-bench` (optional) | Test bench tools on the Linux clients: `bench-dataset`, `bench-datasets-nfs`. Users create the datasets by hand ([Test bench](#test-bench-stack-05)) | 🧪 not yet run on AWS |
+| `05-bench` (optional) | Test bench on the Linux clients: `bench-dataset`, `bench-datasets-nfs` (datasets tested on AWS); results volume `vol_bench` and the OpenTelemetry Collector + bench-probe writing to it (not yet run on AWS). Users create the datasets by hand ([Test bench](#test-bench-stack-05)) | 🧪 partly tested |
 | SMB option | Managed AD (01), domain-joined SVMs (02), Windows clients (03), shares (04) | 🧪 not yet run on AWS |
 
 The NFS lab has been deployed on AWS. Every stack passes `terraform validate` and offline tests with
 a mocked AWS provider, for both protocols; the Linux FlexCache script was also tested against a
-simulated ONTAP REST API. The SMB path has not run on AWS yet, and its PowerShell scripts (Windows
+simulated ONTAP REST API. The test bench's dataset commands have been run on AWS against the NFS
+lab; its results volume and telemetry have only been tested offline so far. The SMB path has not run on AWS yet, and its PowerShell scripts (Windows
 FlexCache configuration and share mapping) have not been executed anywhere.
 
 ## Run the whole lab, step by step
@@ -116,11 +123,12 @@ or apply first prints the settings files it loaded, so check the regions there.
 
 | # | Commands | Creates | Time |
 |---|---|---|---|
+| 0 (once, optional) | `./tf.sh 00-bench-store init`<br>`./tf.sh 00-bench-store plan`<br>`./tf.sh 00-bench-store apply-plan` | Package bucket (origin region), plus one in `cache_region` if different, that delivers the Collector to the clients. No results. Applied once per account; left in place between labs | ~1 min |
 | 1 | `./tf.sh 01-landing-zone init`<br>`./tf.sh 01-landing-zone plan`<br>`./tf.sh 01-landing-zone apply-plan` | Origin and Cache VPCs, subnets, S3 endpoint, peering; SMB: Managed AD | ~2 min; SMB: +20-45 min |
 | 2 | `./tf.sh 02-fsxn init`<br>`./tf.sh 02-fsxn plan`<br>`./tf.sh 02-fsxn apply-plan` | FSx for ONTAP Origin + Cache, SVMs, `vol_origin`, fsxadmin secret | 20-40 min, billed hourly |
 | 3 | `./tf.sh 03-ec2 init`<br>`./tf.sh 03-ec2 plan`<br>`./tf.sh 03-ec2 apply-plan` | origin and cache EC2 clients (Windows for SMB), Instance Connect + SSM endpoints | ~5 min; Windows ~10 min |
 | 4 | `./tf.sh 04-flexcache init`<br>`./tf.sh 04-flexcache plan`<br>`./tf.sh 04-flexcache apply-plan` | Secrets Manager endpoint, then on the origin client: cluster peer, SVM peer, `vol_cache`; SMB: shares `origin` and `cache` | ~5-10 min |
-| 5 (optional) | `./tf.sh 05-bench init`<br>`./tf.sh 05-bench plan`<br>`./tf.sh 05-bench apply-plan` | Test bench tools on the Linux clients: `/opt/bench`, `bench-dataset`, `bench-datasets-nfs` (NFS only). Creates no datasets | ~1 min |
+| 5 (optional) | `./tf.sh 05-bench init`<br>`./tf.sh 05-bench plan`<br>`./tf.sh 05-bench apply-plan` | Test bench on the Linux clients (NFS only): `/opt/bench`, `bench-dataset`, `bench-datasets-nfs`, `bench-results-sync`; with `telemetry = true` (needs step 0) the results volume `vol_bench` on the origin FSx, mounted on both clients, and the OpenTelemetry Collector and bench-probe writing to it. Creates no datasets | ~1 min; ~5 min with telemetry |
 
 During step 4 the apply prints the log of the origin client, e.g.
 `[flexcache] creating cluster peer ...`, `SVM peer state: peered`, `FlexCache vol_cache created`.
@@ -172,6 +180,9 @@ bench-datasets-nfs --dry-run small medium          # what would be written, and 
 bench-datasets-nfs --background small medium       # write them; keeps running after you log out
 ```
 
+With telemetry on (stack 00 applied, `telemetry = true` in stack 05), the clients record host, NFS
+and network metrics the whole time, and all of it, with each dataset's records, goes to the results
+volume `/mnt/fsxn/vol_bench`.
 The whole procedure is in [Test bench](#test-bench-stack-05).
 
 ### 7. Tear everything down
@@ -192,8 +203,12 @@ When you're done (FSx for ONTAP is billed every hour), destroy in reverse order.
 │   ├── 06-fsxn-cache/         FSx for ONTAP Cache: file system, SVM, security group
 │   ├── 07-ec2-client/         Linux (NFS mounts) or Windows (SMB drives) client, Instance Connect + SSM endpoints
 │   ├── 08-ontap-flexcache/    FlexCache setup run on the origin client (SSM + ONTAP REST script, shares for SMB)
-│   └── 09-bench-deploy/       copies the test bench to the Linux clients over SSM
+│   ├── 09-bench-deploy/       copies the test bench to the Linux clients over SSM
+│   ├── 10-bench-store/        one package bucket (delivers the Collector; no results)
+│   ├── 11-bench-telemetry/    mounts vol_bench; OpenTelemetry Collector + bench-probe writing to it
+│   └── 12-bench-results-volume/  vol_bench: the results volume, with a final backup on delete
 ├── stacks/                    what you deploy, one local state file each
+│   ├── 00-bench-store/        optional, once per account: the package bucket(s)
 │   ├── 01-landing-zone/
 │   ├── 02-fsxn/
 │   ├── 03-ec2/
@@ -201,12 +216,14 @@ When you're done (FSx for ONTAP is billed every hour), destroy in reverse order.
 │   └── 05-bench/              optional: the test bench on the clients
 ├── bench/                     test bench code (Python, standard library only)
 │   ├── dataset/               module 1: create, modify, verify and delete datasets
+│   ├── scripts/               bench-datasets-nfs (t-shirt size datasets)
+│   ├── telemetry/             bench-probe: NFS, ENA and ping metrics for the Collector
 │   └── tests/
-├── profiles/datasets/         dataset specs (smoke, small files, large files, mixed)
+├── profiles/datasets/         dataset specs: t-shirt sizes (small ... 2xlarge), smoke, mixed
 ├── docs/test-bench-design.md  design of the whole test bench
 ├── scripts/
 │   ├── init-tfvars.sh         creates common.tfvars + every stack's terraform.tfvars
-│   └── cache/                 read benchmark (planned)
+│   └── cache/                 read benchmark (planned; becomes the bench's Run module)
 ├── common.tfvars.example      settings shared by every stack
 └── tf.sh                      wrapper: ./tf.sh <stack> <command>
 ```
@@ -218,15 +235,18 @@ Stacks read the outputs of earlier stacks from their local state files.
 ## Creation order
 
 Stacks and modules are numbered in the order they are created. A number only depends on lower
-numbers, so deploy from `01` upwards and destroy from the highest number down.
+numbers, so deploy from `01` upwards and destroy from the highest number down. The exception is
+`00-bench-store`: it holds results, is applied once and is left in place when a lab is destroyed.
 
 ```
 stacks:   01-landing-zone ──► 02-fsxn ──► 03-ec2 ──► 04-flexcache ──► 05-bench (optional)
+          00-bench-store (once, stays between labs) ── package bucket ─────────► read by 05-bench
 
 modules:  01-network-origin ──┐                                 ┌──► 05-fsxn-origin ──┐
                               ├──► 03-peering ──► 04-managed-ad ─┤                     ├──► 07-ec2-client ──► 08-ontap-flexcache
-                                                                                                         └──► 09-bench-deploy
-          02-network-cache  ──┘                    (smb only)    └──► 06-fsxn-cache  ──┘
+          02-network-cache  ──┘                    (smb only)    └──► 06-fsxn-cache  ──┘                  └──► 09-bench-deploy ──► 11-bench-telemetry
+          10-bench-store (stack 00) ─────────────────────────────── package bucket per region ───────────────────────────────────────┤
+          05/06-fsxn ──► 12-bench-results-volume (vol_bench) ────────────────────────────────────────────────────────────────────────┘
 ```
 
 | # | Stack | Reads from | Calls modules |
@@ -235,7 +255,8 @@ modules:  01-network-origin ──┐                                 ┌──�
 | 02 | `02-fsxn` | 01: VPCs, subnets, CIDRs, Managed AD (SMB) | `05-fsxn-origin`, `06-fsxn-cache` |
 | 03 | `03-ec2` | 01: subnets, AD Admin secret (SMB) · 02: SVM NFS IPs / SMB names, junction paths | `07-ec2-client` |
 | 04 | `04-flexcache` | 01: origin VPC · 02: management/intercluster IPs, SVMs, fsxadmin secret · 03: origin client | `08-ontap-flexcache` |
-| 05 | `05-bench` (optional) | 03: Linux clients and their regions | `09-bench-deploy` |
+| 00 | `00-bench-store` (optional, once) | – | `10-bench-store` |
+| 05 | `05-bench` (optional) | 03: Linux clients, regions, roles · telemetry: 00: package buckets, 02: file systems, NFS IPs | `09-bench-deploy`, `12-bench-results-volume`, `11-bench-telemetry` |
 
 | # | Module | Side | Needs |
 |---|---|---|---|
@@ -248,6 +269,9 @@ modules:  01-network-origin ──┐                                 ┌──�
 | 07 | `07-ec2-client` | both | 01/02: the FSx for ONTAP subnet · 05/06: SVM NFS IP or SMB name |
 | 08 | `08-ontap-flexcache` | both | 05 + 06: management/intercluster IPs, SVMs, origin volume · 07: the origin client runs it |
 | 09 | `09-bench-deploy` | both | 07: Linux clients with SSM |
+| 10 | `10-bench-store` | per region | – (one package bucket) |
+| 11 | `11-bench-telemetry` | both | 07: clients and roles · 09: `/opt/bench` · 10: the package bucket of each client's region · 12: the results volume |
+| 12 | `12-bench-results-volume` | origin (or cache) | 05/06: the file system and its SVM |
 
 The cache client's `/mnt/fsxn/vol_cache` (or `X:` for SMB) is configured in step 3 but only
 appears once step 4 has created the FlexCache volume (the client retries every minute).
@@ -298,12 +322,76 @@ On each client this:
 
 - unpacks the bench into `/opt/bench`, with `/opt/bench/VERSION.json` recording the Git commit,
   branch, whether there were uncommitted changes, and a hash of the files;
-- installs the `bench-dataset` and `bench-datasets-nfs` commands for every user;
+- installs the `bench-dataset`, `bench-datasets-nfs` and `bench-results-sync` commands for every user;
 - prints checks (Python version, PyYAML, mounts and free space) and runs the bench's tests.
 
 **Updating:** change the code on the operator machine, then `plan` and `apply-plan` again. Only a change to the
 files (or to the stack's settings) sends anything; otherwise the plan shows no changes. What is
 deployed is the working copy, committed or not, so check `uncommitted_changes` in the output.
+
+### Telemetry (OpenTelemetry Collector)
+
+With `telemetry = true` (the default; set it in `stacks/05-bench/terraform.tfvars`) stack 05 also
+installs on each client:
+
+- the **OpenTelemetry Collector** (`otelcol-contrib`, pinned version, checked against its published
+  SHA-256), collecting **host metrics** every 5 s: CPU, memory, load, disk, network, paging;
+- **bench-probe**, feeding the Collector what it can't see itself: **NFS** operations per second,
+  round-trip and execute time per NFS operation (from `/proc/self/mountstats`), the **EC2 network
+  limit** counters (ENA `*_allowance_exceeded`) and **ping** times to both file systems' NFS IPs.
+
+Everything goes to the **results volume** `vol_bench`: a new FSx for ONTAP volume on the origin
+file system (`results_volume.side = "cache"` puts it on the cache), mounted on both clients at
+`/mnt/fsxn/vol_bench` (the cache client mounts it across the peering). **No results go to S3.**
+
+```
+/mnt/fsxn/vol_bench/
+  telemetry/<lab>/<side>/<instance-id>/metrics*.json   Collector output, OTLP JSON, files of 50 MiB
+  datasets/<dataset-id>/                              dataset records, shared by every user and both clients
+  logs/                                               bench-datasets-nfs --background logs
+  labs/<lab>/lab.json                                 regions, file systems, clients, results volume
+```
+
+**Nothing is written to `vol_bench` while a test runs**: extra NFS writes would load the file
+systems being measured. During a test, the Collector, the dataset records and the logs all write to
+the client's **local** staging folder, `/var/lib/bench/staging`. They are copied to `vol_bench` only
+**after** the test:
+
+- at the end of each `bench-dataset create`, `modify`, `verify` or `delete`, and once at the end of
+  a whole `bench-datasets-nfs` batch (after the last size);
+- by hand, at any time: `bench-results-sync`;
+- one last time when stack 05 is destroyed: the Collector is stopped, everything staged is copied,
+  and only then is `vol_bench` unmounted, deleted and backed up. If that copy fails, the destroy
+  stops, so nothing is lost.
+
+Dataset records then live on `vol_bench`; a later command (from either client) reads them from there
+before it starts. The Collector runs all the time while the lab is up, so any dataset or test can
+later be lined up with it by time. Its local files are capped at 2 GiB (`local_buffer_mib`): if no
+copy happens for days, the oldest local telemetry is dropped rather than filling the client's disk.
+
+**When the lab goes, the results stay:** deleting `vol_bench` (destroying stack 05) makes FSx take a
+**final backup** of it, which outlives the file system. `./tf.sh 05-bench output` shows the command
+that lists the backups. Restoring one into a new lab is not automated yet.
+
+The clients have no internet, so the Collector package reaches them through a small **package
+bucket** (S3, `vendor/` only; the clients may only read from it), created once per account:
+
+```bash
+./tf.sh 00-bench-store init
+./tf.sh 00-bench-store plan
+./tf.sh 00-bench-store apply-plan
+```
+
+Then `plan` and `apply-plan` stack 05 as above. The apply creates `vol_bench`, downloads the
+Collector package once on the operator machine (it needs internet; the clients don't), copies it
+into the package bucket(s), mounts `vol_bench` and installs the Collector on each client, validates
+its config, starts both services and waits until telemetry is being staged locally. Without
+stack 00, a plan with `telemetry = true` stops with "Unable to find remote state"; apply stack 00 or
+set `telemetry = false`. On a client, `systemctl status otelcol-contrib bench-probe` shows both
+services.
+
+The FSx for ONTAP and EC2 metrics in CloudWatch, and the consolidated report that puts everything
+on one time axis, come next.
 
 Stack 05 only **installs the tools**. It creates no datasets, and destroying it doesn't delete any.
 
@@ -352,7 +440,7 @@ a dataset; nothing runs on a schedule or as part of an apply.
    ```bash
    bench-datasets-nfs --scale 0.01 small medium
    bench-datasets-nfs --background small 2xsmall medium
-   tail -f ~/bench-results/logs/datasets-nfs-<time>.log     # the exact path is printed
+   tail -f /var/lib/bench/staging/logs/datasets-nfs-<user>-<time>.log   # the exact path is printed
    ```
 
 6. **Check the result**, and delete datasets you no longer need to free the space:
@@ -365,15 +453,17 @@ a dataset; nothing runs on a schedule or as part of an apply.
 
 Each dataset gets an id (`ds-<size>-<utc time>`). Its files go to
 `/mnt/fsxn/vol_origin/<dataset-id>/`, its records (spec, manifest, per-file timings) to
-`~/bench-results/datasets/<dataset-id>/` **of the user who created it**. Keep in mind:
+`/mnt/fsxn/vol_bench/datasets/<dataset-id>/` on the results volume. Keep in mind:
 
-- **Records are per user and per client.** `modify`, `verify`, `delete` and `list` need them, so
-  run them as the same login on the same client (SSM logs in as `ssm-user`, Instance Connect as
-  `ec2-user`). Users who share datasets can point everyone at one folder with
-  `export BENCH_OUT=<shared folder>`.
-- **Records live on the client.** Destroying `03-ec2` deletes them; the dataset files themselves
-  stay on `vol_origin` until `02-fsxn` is destroyed. Copy the records off first if you need them
-  (there is no upload to S3 yet; it comes with the results store).
+- **Records are shared.** Every user on both clients sees and can update them, so `list`,
+  `verify`, `modify` and `delete` work for anyone, from either client.
+- **During the command they are only local** (`/var/lib/bench/staging/datasets/`), and copied to
+  `vol_bench` when it ends; `bench-dataset list` shows `[staged]` for any not copied yet (e.g. if the
+  copy failed: run `bench-results-sync`).
+- **Without the results volume** (`telemetry = false`), records go to `~/bench-results/datasets/`
+  of the user who created them, on that client only, and destroying `03-ec2` deletes them.
+- The dataset files themselves stay on `vol_origin` until `02-fsxn` is destroyed; the records on
+  `vol_bench` go into its final backup.
 - Changing data from the cache side (`bench-dataset modify --side cache --target /mnt/fsxn/vol_cache`)
   is also done by hand, on the cache client, with the records of the original dataset.
 
@@ -390,7 +480,8 @@ Module variables are never set directly: each stack fills them in. You only edit
 | `stacks/01-landing-zone/terraform.tfvars` | VPC CIDRs, subnet CIDR overrides, `origin_nat_gateway` / `cache_nat_gateway` (default `false`); SMB: `ad_domain_name` (`flexcache.lab`), `ad_short_name` (`FLEXCACHE`), `ad_edition` (`Standard`), `ad_az`, `ad_subnet_cidr` |
 | `stacks/02-fsxn/terraform.tfvars` | `origin_fsxn` / `cache_fsxn` (default SINGLE_AZ_1, 128 MB/s, 1024 GiB), `origin_volume` (default `vol_origin`, FlexGroup, 800 GiB, storage efficiency on); SMB: `svm_netbios_names` (`origin`, `cache`) |
 | `stacks/03-ec2/terraform.tfvars` | `origin_ec2` / `cache_ec2`, `instance_type` (`t3.small` Linux, `t3.medium` Windows), `enable_eice` / `enable_ssm`, `nfs_options`, `cache_mounts_origin`; SMB: `domain_join` (`true`), `smb_drives` (`O`, `X`) |
-| `stacks/05-bench/terraform.tfvars` | `bench_clients` (`origin`, `cache`), `install_packages` (none; e.g. `python3-pyyaml`), `run_tests` (`true`) |
+| `stacks/00-bench-store/terraform.tfvars` | `noncurrent_version_days` (30): the package bucket |
+| `stacks/05-bench/terraform.tfvars` | `bench_clients` (`origin`, `cache`), `install_packages` (none; e.g. `python3-pyyaml`), `run_tests` (`true`), `telemetry` (`true`), `results_volume` (`side = "origin"`, `name = "vol_bench"`, `size_gib = 100`), `telemetry_interval_s` (5), `ping_interval_s` (10), `collector_version` (`0.165.0`), `collector_architectures` (`amd64`) |
 | `stacks/04-flexcache/terraform.tfvars` | `flexcache_name` (`vol_cache`), `flexcache_size_gib` (500), `flexcache_junction_path`, `cache_aggregates`, `create_secrets_endpoint`; SMB: `share_names` (`origin`, `cache`) |
 
 The stack files are optional; without them every value has a default. `tf.sh` passes
@@ -559,12 +650,20 @@ generated fsxadmin password, so never commit it.
 Reverse order, highest number first. Each asks for `yes`:
 
 ```bash
-./tf.sh 05-bench destroy            # only if deployed: removes /opt/bench from the clients
+./tf.sh 05-bench destroy            # only if deployed: removes the bench and the collector from the clients
 ./tf.sh 04-flexcache destroy        # runs on the origin client: FlexCache, SVM peer, cluster peer
 ./tf.sh 03-ec2 destroy              # destroy 04 first: it needs the origin client
 ./tf.sh 02-fsxn destroy             # deletes both FSx for ONTAP and the fsxadmin secret
 ./tf.sh 01-landing-zone destroy     # SMB: deleting the Managed AD takes 20-45 min
 ```
+
+Destroying `05-bench` first copies everything still staged on the clients to `vol_bench`, then
+deletes `vol_bench`, and FSx takes a **final backup** of it; that backup outlives `02-fsxn`. So
+always destroy `05-bench` before `02-fsxn` and `03-ec2`.
+
+`00-bench-store` is left in place between labs: it only holds the Collector package. Terraform
+won't delete a bucket that isn't empty; `aws s3 rm --recursive s3://<bucket>` first if you want it
+gone.
 
 ## Network notes
 
@@ -596,6 +695,9 @@ Reverse order, highest number first. Each asks for `yes`:
   the origin client needs them for stack 04).
 - **Secrets Manager endpoint** (stack 04, origin VPC): about USD 0.01/h.
 - **EC2 Instance Connect Endpoint:** free.
+- **Test bench:** the results volume `vol_bench` (100 GiB SSD by default) is billed as FSx for ONTAP
+  SSD storage on the origin file system; its **final backup** as FSx backup storage, until you
+  delete it. The package bucket only holds the 118 MB Collector package per region.
 - **SMB only:**
   - **AWS Managed Microsoft AD** is billed per domain controller hour, and there are always two.
     An older AWS estimate puts Standard Edition at about USD 0.14/h; check the

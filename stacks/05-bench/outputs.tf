@@ -15,3 +15,25 @@ output "bench" {
     }
   }
 }
+
+output "results" {
+  description = "The results volume (vol_bench) and what's on it. null when telemetry = false or not deployed."
+  value = local.results == null || length(module.telemetry) == 0 ? null : {
+    volume_id       = local.results.volume_id
+    file_system     = "${var.results_volume.side} (${local.results_fs.file_system_id})"
+    nfs             = "${local.results.nfs_ip}:${local.results.junction_path}"
+    mount_point     = module.telemetry[0].results_mount
+    telemetry_files = module.telemetry[0].telemetry_files
+    datasets        = "${module.telemetry[0].results_mount}/datasets/"
+    lab_json        = "${module.telemetry[0].results_mount}/labs/${local.lab}/lab.json"
+    final_backups   = "aws fsx describe-backups --region ${local.results_fs.region} --filters Name=volume-id,Values=${local.results.volume_id}"
+  }
+}
+
+output "telemetry" {
+  description = "null when telemetry = false or not deployed."
+  value = length(module.telemetry) == 0 ? null : {
+    collector_version = module.telemetry[0].collector_version
+    check_on_client   = "systemctl status otelcol-contrib bench-probe"
+  }
+}

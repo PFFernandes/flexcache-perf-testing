@@ -1,0 +1,4 @@
+# Optional: copy to terraform.tfvars.
+
+# Days an overwritten or deleted object stays recoverable (the bucket is versioned).
+noncurrent_version_days = 30

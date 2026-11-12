@@ -1,6 +1,6 @@
 # Test bench framework – design
 
-Status: **draft v8 for review**. Nothing here is implemented yet.
+Status: **draft v11 for review**. Built so far: sections marked "(built)" (§2.7, §2.8, §4.3, §4.5); the rest is design.
 
 The Terraform stacks build the lab (Origin, Cache, two EC2 instances, FlexCache). The test bench is
 the layer on top: it fills the volumes with datasets, runs read/write and file open/close tests from
@@ -16,6 +16,9 @@ destroyed, and lets us review it later on a dashboard.
 | v6 | The bench is organised as **four modules**: Dataset, Tooling, Run, Observe (§2.6). Results are saved in a store that is separate from Observe, so Observe can be deleted, recreated and attached to saved results later. |
 | v7 | Built: module 1 (Dataset, `bench/dataset`) and delivery to the clients: `modules/09-bench-deploy` + `stacks/05-bench` (§2.7). Module numbers follow the repository today (`07-ec2-client`, `08-ontap-flexcache`), so the bench's Terraform modules start at 09. |
 | v8 | **Datasets are manual**: users create, change, verify and delete them by hand on the clients (`bench-dataset`, `bench-datasets-nfs`). No state machine, Lambda or schedule touches datasets; the automation starts at the test runs (§2.6, §4). |
+| v9 | Built: results store as **stack `00-bench-store`** (not inside stack 05) and telemetry: OpenTelemetry Collector + bench-probe on the clients, writing to S3 (§2.8). Collection is continuous while a lab is up; results are lined up by time. |
+| v11 | **Nothing is written to the results volume during a test.** Telemetry, dataset records and logs are staged on the client's local disk and copied to `vol_bench` after each command, by hand (`bench-results-sync`) and on destroy (§2.8). |
+| v10 | **No results in S3.** Results go to an FSx for ONTAP **results volume** (`vol_bench`, origin by default) mounted on both clients, with a **final backup** when it is deleted. The S3 bucket of stack 00 only delivers the Collector package to the clients. Supersedes the S3 store of §6 and v9. |
 
 ## 0. Decisions so far
 
@@ -26,6 +29,7 @@ destroyed, and lets us review it later on a dashboard.
 | FlexCache write-back | To investigate (FSx supports it since May 2025, ONTAP 9.15.1+ on origin and cache). Not a priority: lab option and tests come in a later phase. |
 | Cross-region | **Planned.** Built into the platform from phase 1. |
 | Datasets | **Manual.** Users log in to the client and run `bench-dataset` / `bench-datasets-nfs` themselves. Only the test runs are automated. Six t-shirt sizes are defined (§4.5). |
+| Results storage | **An FSx for ONTAP results volume, `vol_bench`**, on the origin (or cache) file system, mounted on both clients. FSx takes a final backup when it is deleted; that backup is how results outlive a lab. No results in S3; S3 only delivers the Collector package (the clients have no internet). |
 | Priority | **Review results after the fact** is the priority. Live indicators during a run: nice to have, later. |
 | Identity Center | Not available → no Amazon Managed Grafana. Dashboard choice in §7, **to decide**. |
 | Platform stack | **`05-bench`, applied after 01-04, only if wanted** (`deploy_bench = true`). The lab works without it. Its data survives a lab teardown (§2.5). |
@@ -267,6 +271,59 @@ on the next apply; nothing is sent otherwise.
 This is the first piece of stack 05. The store, engine and Observe parts of §2.5 are added to the
 same stack later, as `modules/10-…` onwards. The bundle travels inside one SSM command (limit
 ~60 KB); once Tooling brings the S3 store, delivery moves to S3 and the limit goes away.
+
+### 2.8 Results volume and telemetry (built)
+
+**Results: an FSx for ONTAP volume, not S3.** `modules/12-bench-results-volume` creates
+`vol_bench` (FlexVol, 100 GiB, UNIX, storage efficiency on, tiering `NONE`) on the origin file
+system, or the cache one (`results_volume.side`). Both clients mount it at `/mnt/fsxn/vol_bench`;
+the other side mounts it across the peering. Everything the bench records goes there:
+
+```
+/mnt/fsxn/vol_bench/
+  telemetry/<lab>/<side>/<instance-id>/metrics*.json   OpenTelemetry Collector, OTLP JSON, one batch per line
+  datasets/<dataset-id>/                              dataset records, shared by all users and both clients
+  logs/                                               bench-datasets-nfs --background
+  labs/<lab>/lab.json                                 regions, file systems, clients, results volume
+```
+
+**Outliving the lab: the final backup.** `skip_final_backup = false`, so deleting the volume
+(destroying stack 05, which must come before 02-fsxn) makes FSx back it up first, tagged
+`Purpose = bench-results` and `Lab = <lab>`. The backup is independent of the file system.
+Restoring it into a new lab (as a read-only volume to review, next to a fresh `vol_bench`) is the
+next piece for G4; it replaces the S3 store, Glue tables and `observe attach` of §6 and §2.6.
+
+**S3 only for software.** The clients have no internet, so `stacks/00-bench-store`
+(`modules/10-bench-store`) keeps a package bucket per region in use, holding only
+`vendor/otelcol-contrib/<version>/*.rpm`; the clients may only read `vendor/*`. It stays between
+labs so the package isn't downloaded again each time.
+
+**Staging, then copying.** Writing results to `vol_bench` during a test would add NFS load to the
+file systems being measured (the origin file system, by default). So during a test everything is
+written to the client's local `/var/lib/bench/staging` and `bench-results-sync` (`bench/results/
+sync.py`, root) copies it to `vol_bench` afterwards: at the end of each `bench-dataset` command and
+each `bench-datasets-nfs` batch, by hand, and once more on destroy (Collector stopped first; a
+failed final copy stops the destroy). Dataset records move to `vol_bench` (a running command holds
+a lock, and its folder is skipped); a later command reads them back before it starts. Local
+telemetry is capped (2 GiB) so an idle lab can't fill the client's disk. The Run module will copy at
+the end of each run in the same way.
+
+**Telemetry: `modules/11-bench-telemetry`, called by stack 05 (`telemetry = true`).**
+
+- **OpenTelemetry Collector** (`otelcol-contrib`, pinned release, SHA-256 checked on the operator
+  machine and again on the client). `hostmetrics` (CPU, memory, load, disk, network, paging) every
+  5 s; OTLP/HTTP receiver on `127.0.0.1:4318`; **file exporter** to local staging, rotated every
+  50 MiB, copied to `vol_bench` after tests.
+- **bench-probe** (`bench/telemetry/probe.py`, stdlib) instead of node_exporter: NFS ops/s, RTT
+  and execute time per operation and mount from `/proc/self/mountstats`, ENA allowance counters
+  from `ethtool -S`, ping to both file systems' NFS IPs, sent to the Collector over OTLP.
+- **Continuous, not per run.** The Collector runs whenever the lab is up and every point carries
+  `bench.lab`, `bench.side`, `host.id`; a dataset or run is matched to the telemetry by **time
+  window and host**. Run ids are added as events by the Run module.
+- **Not yet:** ONTAP-level metrics from inside the cluster (Harvest, cluster peer ping); FSx for
+  ONTAP's own CloudWatch metrics and the consolidated report are the next pieces. With no results
+  in S3, the report reads the results volume (it runs on a client) and pulls CloudWatch for the
+  same time window.
 
 ## 3. Concepts and identifiers
 
@@ -828,10 +885,13 @@ bench/
     dashboards/              Grafana dashboard JSON
 profiles/                    datasets/, workloads/, suites/   (published to the store)
 modules/09-bench-deploy/     Terraform: delivery to the clients over SSM (built)
-modules/10-bench-store/      Terraform: S3 buckets (prevent_destroy)
-modules/11-bench-tooling/    Terraform: engine, IAM, worker attachment over SSM
-modules/12-bench-observe/    Terraform: Glue/Athena, review Grafana
-stacks/05-bench/             calls 09, 10, 11, 12 (switches: deploy_bench, deploy_observe)
+modules/10-bench-store/      Terraform: one package bucket (built; called by stack 00)
+modules/11-bench-telemetry/  Terraform: results mount, Collector + probe on the clients (built)
+modules/12-bench-results-volume/ Terraform: vol_bench with a final backup (built)
+modules/13-bench-tooling/    Terraform: engine, IAM, worker attachment over SSM
+modules/14-bench-observe/    Terraform: Glue/Athena, review Grafana
+stacks/00-bench-store/       calls 10 (built)
+stacks/05-bench/             calls 09, 11, 12 (built); later the engine and Observe
 ```
 
 Changes to the existing lab:

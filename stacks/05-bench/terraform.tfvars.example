@@ -9,3 +9,23 @@ install_packages = []
 
 # Run the bench's own tests on each client after every deploy (a few seconds, offline).
 run_tests = true
+
+# Telemetry: the results volume vol_bench (FSx for ONTAP, mounted on both clients at
+# /mnt/fsxn/vol_bench) and the OpenTelemetry Collector + bench-probe writing to it. Dataset
+# records go there too. FSx takes a final backup of vol_bench when it's deleted.
+# Needs stacks/00-bench-store once (the package bucket that delivers the Collector).
+# false = bench code only, records in each user's home folder.
+telemetry = true
+
+results_volume = {
+  side     = "origin" # or "cache": which FSx for ONTAP holds vol_bench
+  name     = "vol_bench"
+  size_gib = 100
+}
+
+telemetry_interval_s = 5  # host metrics, NFS and ENA counters
+ping_interval_s      = 10 # ping to both file systems' NFS IPs
+
+# Collector release; change version and checksums together (from the release's .sha256 files).
+# collector_version       = "0.165.0"
+# collector_architectures = ["amd64"]   # ["arm64"] for Graviton instance types

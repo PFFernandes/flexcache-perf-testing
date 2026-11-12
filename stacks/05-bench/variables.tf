@@ -104,3 +104,59 @@ variable "run_tests" {
   type        = bool
   default     = true
 }
+
+# --- telemetry -----------------------------------------------------------------------
+
+variable "telemetry" {
+  description = "Create the results volume and install the OpenTelemetry Collector and bench-probe on the clients, writing to it. Needs 02-fsxn and stacks/00-bench-store (package delivery)."
+  type        = bool
+  default     = true
+}
+
+variable "telemetry_interval_s" {
+  description = "Seconds between host-metric and NFS/ENA samples on the clients."
+  type        = number
+  default     = 5
+}
+
+variable "ping_interval_s" {
+  description = "Seconds between ping rounds to the file systems' NFS IPs."
+  type        = number
+  default     = 10
+}
+
+variable "collector_version" {
+  description = "OpenTelemetry Collector Contrib release. Change together with collector_sha256."
+  type        = string
+  default     = "0.165.0"
+}
+
+variable "collector_sha256" {
+  description = "SHA-256 of otelcol-contrib_<version>_linux_<arch>.rpm (the release's .sha256 files)."
+  type        = map(string)
+  default = {
+    amd64 = "f045845995709932dcc2952b86a9046320f6ec3c8b8615dc6f7a39931d92db94"
+    arm64 = "c388cc97c36d689d77fe085b4dd5601bf6ff92bf963c67eb8596d580ad72c62a"
+  }
+}
+
+variable "collector_architectures" {
+  description = "Collector packages to stage: amd64 for x86_64 instance types, arm64 for Graviton (architecture in stacks/03-ec2)."
+  type        = list(string)
+  default     = ["amd64"]
+}
+
+variable "results_volume" {
+  description = "The results volume: which file system holds it (origin or cache), its name and size. FSx keeps a final backup when it's deleted."
+  type = object({
+    side     = optional(string, "origin")
+    name     = optional(string, "vol_bench")
+    size_gib = optional(number, 100)
+  })
+  default = {}
+
+  validation {
+    condition     = contains(["origin", "cache"], var.results_volume.side)
+    error_message = "results_volume.side must be origin or cache."
+  }
+}

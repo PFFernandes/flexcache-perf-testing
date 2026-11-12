@@ -5,8 +5,8 @@
 #   remote.sh remove
 #
 # deploy: unpacks the bench into $BENCH_HOME (default /opt/bench), swapping the old copy
-#         out only once the new one is complete; installs the bench-dataset and
-#         bench-datasets-nfs commands;
+#         out only once the new one is complete; installs the bench-dataset,
+#         bench-datasets-nfs and bench-results-sync commands;
 #         installs extra packages; prints checks; runs the bench tests.
 # remove: deletes $BENCH_HOME and the wrapper. Dataset files on the volumes and the
 #         records in each user's ~/bench-results are not touched.
@@ -19,8 +19,8 @@ log() { echo "[bench-deploy] $*"; }
 ACTION="${1:?action}"
 
 if [[ "$ACTION" == "remove" ]]; then
-  rm -rf "$BENCH_HOME" "$BENCH_HOME.new" "$BENCH_HOME.old" "$BIN_DIR/bench-dataset" "$BIN_DIR/bench-datasets-nfs"
-  log "removed $BENCH_HOME, $BIN_DIR/bench-dataset and bench-datasets-nfs (datasets and ~/bench-results are kept)"
+  rm -rf "$BENCH_HOME" "$BENCH_HOME.new" "$BENCH_HOME.old" "$BIN_DIR/bench-dataset" "$BIN_DIR/bench-datasets-nfs" "$BIN_DIR/bench-results-sync"
+  log "removed $BENCH_HOME and the bench commands (datasets and ~/bench-results are kept)"
   exit 0
 fi
 
@@ -41,18 +41,45 @@ mv "$BENCH_HOME.new" "$BENCH_HOME"
 rm -rf "$BENCH_HOME.old" "$BUNDLE" "$VERSION_FILE"
 log "bench unpacked in $BENCH_HOME"
 
-# 2. Wrapper: usable from any folder by any user (ssm-user, ec2-user).
+# 2. Commands, usable from any folder by any user (ssm-user, ec2-user).
+#    With the results volume (/etc/bench/bench.env, from modules/11-bench-telemetry), a command
+#    writes its records to the local staging folder and they are copied to the results volume
+#    only AFTER the command has finished: nothing is written to the volume during a test.
 mkdir -p "$BIN_DIR"
 cat > "$BIN_DIR/bench-dataset" <<WRAPPER
 #!/bin/sh
-# Installed by modules/09-bench-deploy. Records go to \$BENCH_OUT (default ~/bench-results/datasets).
+# Installed by modules/09-bench-deploy.
 export PYTHONPATH="$BENCH_HOME\${PYTHONPATH:+:\$PYTHONPATH}"
 export BENCH_HOME="$BENCH_HOME"
-export BENCH_OUT="\${BENCH_OUT:-\$HOME/bench-results/datasets}"
 export PYTHONDONTWRITEBYTECODE=1
-exec python3 -m bench.dataset "\$@"
+if [ -r /etc/bench/bench.env ]; then set -a; . /etc/bench/bench.env; set +a; fi
+if [ -n "\${BENCH_STAGING:-}" ]; then
+  umask 000          # staging and results are shared by every user
+else
+  export BENCH_OUT="\${BENCH_OUT:-\$HOME/bench-results/datasets}"
+fi
+python3 -m bench.dataset "\$@"
+rc=\$?
+# plan, list and --help write nothing; BENCH_NO_SYNC=1 leaves the copy to the caller.
+case " \$* " in *" plan "*|*" list "*|*" -h "*|*" --help "*) exit \$rc ;; esac
+if [ -n "\${BENCH_STAGING:-}" ] && [ -z "\${BENCH_NO_SYNC:-}" ]; then
+  "$BIN_DIR/bench-results-sync" --quiet || echo "bench-dataset: results are still in \$BENCH_STAGING; copy them later with: bench-results-sync" >&2
+fi
+exit \$rc
 WRAPPER
 chmod 755 "$BIN_DIR/bench-dataset"
+
+cat > "$BIN_DIR/bench-results-sync" <<WRAPPER
+#!/bin/sh
+# Installed by modules/09-bench-deploy: copy results from the staging folder to the results
+# volume. Runs as root (the collector's files belong to its service user).
+if [ "\$(id -u)" -ne 0 ]; then exec sudo -n "\$0" "\$@"; fi
+if [ -r /etc/bench/bench.env ]; then set -a; . /etc/bench/bench.env; set +a; fi
+export PYTHONPATH="$BENCH_HOME" PYTHONDONTWRITEBYTECODE=1
+exec python3 -m bench.results.sync "\$@"
+WRAPPER
+chmod 755 "$BIN_DIR/bench-results-sync"
+
 cat > "$BIN_DIR/bench-datasets-nfs" <<WRAPPER
 #!/bin/sh
 # Installed by modules/09-bench-deploy: creates the t-shirt size datasets on an NFS mount.
@@ -60,7 +87,7 @@ export BENCH_HOME="$BENCH_HOME"
 exec bash "$BENCH_HOME/bench/scripts/datasets-nfs.sh" "\$@"
 WRAPPER
 chmod 755 "$BIN_DIR/bench-datasets-nfs"
-log "installed $BIN_DIR/bench-dataset and $BIN_DIR/bench-datasets-nfs"
+log "installed $BIN_DIR/bench-dataset, bench-datasets-nfs and bench-results-sync"
 
 # 3. Extra packages (from the Amazon Linux repos, reached through the S3 gateway endpoint).
 if [[ -n "$PACKAGES" ]]; then
