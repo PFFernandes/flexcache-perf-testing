@@ -455,6 +455,23 @@ a dataset; nothing runs on a schedule or as part of an apply.
    bench-dataset delete <dataset-id> --yes
    ```
 
+7. **Measure the reads**, on both sides. On the origin client (baseline), then on the cache client
+   (through FlexCache), the same command:
+
+   ```bash
+   bench-dataset read <dataset-id> --side origin     # reads /mnt/fsxn/vol_origin
+   bench-dataset read <dataset-id> --side cache      # reads /mnt/fsxn/vol_cache (FlexCache)
+   ```
+
+   Every file is opened and read to the end, and each file's **open**, **first byte**, **whole
+   file** and **close** are timed. Each pass reports the total, e.g. "10.0 GiB in 163840 files in
+   312.4 s, 34.4 MB/s", with p50 / p99 / max for the four steps. Two passes by default, with the
+   client's page cache dropped before each: through FlexCache, pass 1 is **cold** (if the cache
+   hasn't seen these files yet) and pass 2 **warm**. `--mode first` reads only the first block,
+   `--mode open` only opens and closes (the metadata cost of opening that many GB of files);
+   `--files N` or `--percent P` read a sample. The results go to `reads/` in the dataset's records
+   and to the dashboard (read throughput and latency per pass).
+
 Each dataset gets an id (`ds-<size>-<utc time>`). Its files go to
 `/mnt/fsxn/vol_origin/<dataset-id>/`, its records (spec, manifest, per-file timings) to
 `/mnt/fsxn/vol_bench/datasets/<dataset-id>/` on the results volume. Keep in mind:
@@ -478,7 +495,8 @@ All commands, sizes and options: [bench/dataset/README.md](bench/dataset/README.
 **The consolidated view: the CloudWatch dashboard** (`cloudwatch = true`, the default). One page per
 lab, `<creator>-<project>-bench`, origin on the left and cache on the right:
 
-- the bench's own metrics: dataset write throughput, open/write/close latency (p50, p99), client
+- the bench's own metrics: dataset write throughput, open/write/close latency (p50, p99), dataset
+  reads per pass (MB/s, open, first byte, whole file and close latency), client
   CPU, memory and network, NFS round-trip and operations per NFS operation, EC2 network-limit
   counters, ping to both file systems;
 - next to AWS's own: FSx for ONTAP throughput and IOPS per volume, read/write latency, CPU and

@@ -3,6 +3,7 @@
 #
 #   test bench (namespace FlexCacheBench, pushed by bench-results-sync AFTER each test)
 #     dataset write throughput and open / write / close latency (p50, p99)
+#     dataset reads per pass: throughput, open / first byte / whole file / close latency
 #     host CPU, memory, network; NFS round-trip and operations per NFS operation;
 #     EC2 network-limit counters; ping to both file systems
 #   AWS (published by AWS itself)
@@ -36,6 +37,15 @@ locals {
       open_p99  = { metric = "DatasetOpenLatency", dims = ",Dataset", stat = "p99" }
       close_p99 = { metric = "DatasetCloseLatency", dims = ",Dataset", stat = "p99" }
       write_p99 = { metric = "DatasetWriteTime", dims = ",Dataset", stat = "p99" }
+      rd_bytes  = { metric = "DatasetBytesRead", dims = ",Dataset,Pass", stat = "Sum" }
+      rd_files  = { metric = "DatasetFilesRead", dims = ",Dataset,Pass", stat = "Sum" }
+      rd_open50 = { metric = "DatasetReadOpenLatency", dims = ",Dataset,Pass", stat = "p50" }
+      rd_open99 = { metric = "DatasetReadOpenLatency", dims = ",Dataset,Pass", stat = "p99" }
+      rd_first  = { metric = "DatasetFirstByteLatency", dims = ",Dataset,Pass", stat = "p50" }
+      rd_first9 = { metric = "DatasetFirstByteLatency", dims = ",Dataset,Pass", stat = "p99" }
+      rd_whole  = { metric = "DatasetReadTime", dims = ",Dataset,Pass", stat = "p50" }
+      rd_whole9 = { metric = "DatasetReadTime", dims = ",Dataset,Pass", stat = "p99" }
+      rd_close9 = { metric = "DatasetReadCloseLatency", dims = ",Dataset,Pass", stat = "p99" }
       } : k => format("SEARCH('{%s,Lab,Side%s} MetricName=\"%s\" Lab=\"%s\" Side=\"%s\"', '%s', 60)",
     local.ns, m.dims, m.metric, local.lab, side, m.stat)
   } }
@@ -73,6 +83,26 @@ locals {
         [{ id = "o99", expression = local.bench[side].open_p99, label = "open p99" }],
         [{ id = "w99", expression = local.bench[side].write_p99, label = "write p99" }],
         [{ id = "c99", expression = local.bench[side].close_p99, label = "close p99" }],
+      ]
+    },
+    {
+      title = "${side}: dataset read (MB/s) and files per minute, per pass"
+      metrics = [
+        [{ id = "rb", expression = local.bench[side].rd_bytes, visible = false }],
+        [{ id = "rmbs", expression = "rb/60000000", label = "MB/s" }],
+        [{ id = "rf", expression = local.bench[side].rd_files, label = "files/min", yAxis = "right" }],
+      ]
+    },
+    {
+      title = "${side}: dataset read latency per pass (µs): open, first byte, whole file, close"
+      metrics = [
+        [{ id = "ro5", expression = local.bench[side].rd_open50, label = "open p50" }],
+        [{ id = "ro9", expression = local.bench[side].rd_open99, label = "open p99" }],
+        [{ id = "rf5", expression = local.bench[side].rd_first, label = "first byte p50" }],
+        [{ id = "rf9", expression = local.bench[side].rd_first9, label = "first byte p99" }],
+        [{ id = "rw5", expression = local.bench[side].rd_whole, label = "whole file p50" }],
+        [{ id = "rw9", expression = local.bench[side].rd_whole9, label = "whole file p99" }],
+        [{ id = "rc9", expression = local.bench[side].rd_close9, label = "close p99" }],
       ]
     },
     {

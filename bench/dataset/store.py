@@ -19,8 +19,8 @@ import sys
 import time
 
 MANIFEST_FIELDS = ["idx", "path", "size", "sha256", "state"]
-OPS_FIELDS = ["ts", "idx", "action", "open_us", "io_us", "fsync_us", "close_us", "bytes", "error"]
-TIMED = ("open_us", "io_us", "fsync_us", "close_us")
+OPS_FIELDS = ["ts", "idx", "action", "open_us", "first_us", "io_us", "fsync_us", "close_us", "bytes", "error"]
+TIMED = ("open_us", "first_us", "io_us", "fsync_us", "close_us")
 
 
 class Store:

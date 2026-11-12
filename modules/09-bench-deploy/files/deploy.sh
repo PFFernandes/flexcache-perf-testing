@@ -19,7 +19,7 @@ set -euo pipefail
 
 : "${ACTION:?}" "${REGION:?}" "${INSTANCE_ID:?}" "${REMOTE_SH:?}"
 SIDE="${SIDE:-client}"
-MAX_PARAMS_BYTES=60000   # stay below the SSM Run Command parameter limit
+CHUNK_BYTES=40000        # bundle bytes per SSM command (SSM limits the size of one command)
 log() { echo "[bench-deploy $SIDE] $*"; }
 b64() { base64 | tr -d '\n'; }   # one line on macOS and Linux
 
@@ -41,67 +41,78 @@ for i in $(seq 1 30); do
   sleep 10
 done
 
-# 2. Build the command. Only base64 text and fixed words go into the JSON: no escaping needed.
+# 2. Send a command with SSM, wait, print its output. Fails the script if it fails.
+#    Only base64 text and fixed words go into the JSON: no escaping needed.
+send() { # <params.json> <comment> [quiet]
+  local params="$1" comment="$2" quiet="${3:-}" cmd_id status err
+  cmd_id="$(aws ssm send-command --region "$REGION" --instance-ids "$INSTANCE_ID" \
+    --document-name AWS-RunShellScript --comment "$comment" \
+    --parameters "file://$params" --timeout-seconds 600 \
+    --query Command.CommandId --output text)"
+  [[ -n "$quiet" ]] || log "SSM command $cmd_id sent to $INSTANCE_ID ($comment); waiting..."
+  while true; do
+    status="$(aws ssm get-command-invocation --region "$REGION" --command-id "$cmd_id" \
+      --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null || echo Pending)"
+    case "$status" in
+      Pending|InProgress|Delayed) sleep 3 ;;
+      *) break ;;
+    esac
+  done
+  if [[ -z "$quiet" || "$status" != "Success" ]]; then
+    aws ssm get-command-invocation --region "$REGION" --command-id "$cmd_id" --instance-id "$INSTANCE_ID" \
+      --query StandardOutputContent --output text
+    err="$(aws ssm get-command-invocation --region "$REGION" --command-id "$cmd_id" --instance-id "$INSTANCE_ID" \
+      --query StandardErrorContent --output text)"
+    [[ -n "$err" && "$err" != "None" ]] && echo "$err" >&2
+  fi
+  if [[ "$status" != "Success" ]]; then
+    log "FAILED ($status). Full log: aws ssm get-command-invocation --region $REGION --command-id $cmd_id --instance-id $INSTANCE_ID"
+    exit 1
+  fi
+}
+
 REMOTE_B64="$(b64 < "$REMOTE_SH")"
 PARAMS="$(mktemp)"
 trap 'rm -f "$PARAMS"' EXIT
 
-if [[ "$ACTION" == "deploy" ]]; then
-  : "${SOURCE_ROOT:?}" "${SOURCE_DIRS:?}" "${BUNDLE_HASH:?}"
-  tar_opts=(--exclude '__pycache__' --exclude '*.pyc' --exclude '.DS_Store')
-  if tar --version 2>/dev/null | grep -q bsdtar; then
-    tar_opts+=(--no-mac-metadata --no-xattrs)   # no ._ files or macOS attributes on Linux
-  fi
-  # shellcheck disable=SC2086
-  BUNDLE_B64="$(COPYFILE_DISABLE=1 tar -C "$SOURCE_ROOT" "${tar_opts[@]}" -czf - $SOURCE_DIRS | b64)"
-
-  commit="$(git -C "$SOURCE_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
-  branch="$(git -C "$SOURCE_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
-  dirty=false
-  [[ -n "$(git -C "$SOURCE_ROOT" status --porcelain -- $SOURCE_DIRS 2>/dev/null)" ]] && dirty=true
-  VERSION_B64="$(printf '{"commit":"%s","branch":"%s","uncommitted_changes":%s,"bundle_sha256":"%s","deployed":"%s"}\n' \
-    "$commit" "$branch" "$dirty" "$BUNDLE_HASH" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" | b64)"
-
-  printf '{"executionTimeout":["900"],"commands":["set -euo pipefail","echo %s | base64 -d > /root/bench-remote.sh","echo %s | base64 -d > /root/bench-bundle.tgz","echo %s | base64 -d > /root/bench-version.json","bash /root/bench-remote.sh deploy /root/bench-bundle.tgz /root/bench-version.json %s %s"]}' \
-    "$REMOTE_B64" "$BUNDLE_B64" "$VERSION_B64" "${PACKAGES:--}" "${RUN_TESTS:-1}" > "$PARAMS"
-  log "bundle: commit $commit ($branch), uncommitted changes: $dirty, $(wc -c < "$PARAMS" | tr -d ' ') bytes"
-else
+if [[ "$ACTION" != "deploy" ]]; then
   printf '{"executionTimeout":["300"],"commands":["set -euo pipefail","echo %s | base64 -d > /root/bench-remote.sh","bash /root/bench-remote.sh remove"]}' \
     "$REMOTE_B64" > "$PARAMS"
+  send "$PARAMS" "bench $ACTION ($SIDE)"
+  log "done"
+  exit 0
 fi
 
-size="$(wc -c < "$PARAMS" | tr -d ' ')"
-if (( size > MAX_PARAMS_BYTES )); then
-  log "the bundle is too big for one SSM command ($size bytes, limit $MAX_PARAMS_BYTES)."
-  log "Deliver it through S3 instead (planned with the Tooling module), or exclude large files."
-  exit 1
+: "${SOURCE_ROOT:?}" "${SOURCE_DIRS:?}" "${BUNDLE_HASH:?}"
+tar_opts=(--exclude '__pycache__' --exclude '*.pyc' --exclude '.DS_Store')
+if tar --version 2>/dev/null | grep -q bsdtar; then
+  tar_opts+=(--no-mac-metadata --no-xattrs)   # no ._ files or macOS attributes on Linux
 fi
+# shellcheck disable=SC2086
+BUNDLE_B64="$(COPYFILE_DISABLE=1 tar -C "$SOURCE_ROOT" "${tar_opts[@]}" -cf - $SOURCE_DIRS | gzip -9 | b64)"
 
-# 3. Send and wait.
-CMD_ID="$(aws ssm send-command --region "$REGION" --instance-ids "$INSTANCE_ID" \
-  --document-name AWS-RunShellScript --comment "bench $ACTION ($SIDE)" \
-  --parameters "file://$PARAMS" --timeout-seconds 600 \
-  --query Command.CommandId --output text)"
-log "SSM command $CMD_ID sent to $INSTANCE_ID ($ACTION); waiting..."
+commit="$(git -C "$SOURCE_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+branch="$(git -C "$SOURCE_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+dirty=false
+# shellcheck disable=SC2086
+[[ -n "$(git -C "$SOURCE_ROOT" status --porcelain -- $SOURCE_DIRS 2>/dev/null)" ]] && dirty=true
+VERSION_B64="$(printf '{"commit":"%s","branch":"%s","uncommitted_changes":%s,"bundle_sha256":"%s","deployed":"%s"}\n' \
+  "$commit" "$branch" "$dirty" "$BUNDLE_HASH" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" | b64)"
 
-status=""
-while true; do
-  status="$(aws ssm get-command-invocation --region "$REGION" --command-id "$CMD_ID" \
-    --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null || echo Pending)"
-  case "$status" in
-    Pending|InProgress|Delayed) sleep 5 ;;
-    *) break ;;
-  esac
+# 3. The bundle travels in pieces of CHUNK_BYTES (SSM limits the size of one command),
+#    appended to a file on the client; the last command checks it, unpacks and installs.
+total=${#BUNDLE_B64}
+parts=$(( (total + CHUNK_BYTES - 1) / CHUNK_BYTES ))
+sha="$(printf '%s' "$BUNDLE_B64" | { command -v sha256sum >/dev/null && sha256sum || shasum -a 256; } | cut -d' ' -f1)"
+log "bundle: commit $commit ($branch), uncommitted changes: $dirty, $total bytes in $parts part(s)"
+for (( i = 0; i < parts; i++ )); do
+  op='>>'; [[ $i -eq 0 ]] && op='>'
+  printf '{"executionTimeout":["300"],"commands":["set -euo pipefail","printf %%s %s %s /root/bench-bundle.b64"]}' \
+    "${BUNDLE_B64:$(( i * CHUNK_BYTES )):$CHUNK_BYTES}" "$op" > "$PARAMS"
+  send "$PARAMS" "bench deploy ($SIDE) part $(( i + 1 ))/$parts" quiet
 done
 
-aws ssm get-command-invocation --region "$REGION" --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
-  --query StandardOutputContent --output text
-err="$(aws ssm get-command-invocation --region "$REGION" --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
-  --query StandardErrorContent --output text)"
-[[ -n "$err" && "$err" != "None" ]] && echo "$err" >&2
-
-if [[ "$status" != "Success" ]]; then
-  log "FAILED ($status). Full log: aws ssm get-command-invocation --region $REGION --command-id $CMD_ID --instance-id $INSTANCE_ID"
-  exit 1
-fi
+printf '{"executionTimeout":["900"],"commands":["set -euo pipefail","test $(sha256sum /root/bench-bundle.b64 | cut -c1-64) = %s || { echo bundle damaged in transit; exit 1; }","base64 -d < /root/bench-bundle.b64 > /root/bench-bundle.tgz","rm -f /root/bench-bundle.b64","echo %s | base64 -d > /root/bench-remote.sh","echo %s | base64 -d > /root/bench-version.json","bash /root/bench-remote.sh deploy /root/bench-bundle.tgz /root/bench-version.json %s %s"]}' \
+  "$sha" "$REMOTE_B64" "$VERSION_B64" "${PACKAGES:--}" "${RUN_TESTS:-1}" > "$PARAMS"
+send "$PARAMS" "bench deploy ($SIDE)"
 log "done"

@@ -1,4 +1,4 @@
-"""bench dataset: plan | create | modify | verify | delete | list.
+"""bench dataset: plan | create | modify | verify | read | delete | list.
 
 Runs on the machine that has the volume mounted (the origin or the cache client).
 """
@@ -12,6 +12,7 @@ import platform
 import random
 import shutil
 import socket
+import subprocess
 import sys
 import time
 
@@ -23,6 +24,9 @@ MARKER = ".bench-dataset.json"
 SPACE_MARGIN = 1.10
 MODES = ("create", "overwrite", "append", "metadata")
 META_OPS = ("rename", "chmod", "delete")
+READ_MODES = ("full", "first", "open")
+# Where each side reads a dataset when --target isn't given (the client mounts of stack 03).
+SIDE_MOUNTS = {"origin": "/mnt/fsxn/vol_origin", "cache": "/mnt/fsxn/vol_cache"}
 
 
 
@@ -105,21 +109,23 @@ def _where(target: str, side: str) -> dict:
 
 
 def _run_pass(store: Store, ops_name: str, root: str, tasks: list, spec: dict, gen: int, jobs: int,
-              resume: bool = False):
+              resume: bool = False, read_mode: str = "full", read_block: int = 0):
     rec = Recorder(store.path(ops_name), len(tasks))
-    for row in engine.run(root, tasks, spec, gen, jobs, resume):
+    for row in engine.run(root, tasks, spec, gen, jobs, resume, read_mode, read_block):
         rec.add(row)
     return rec, rec.close()
 
 
-def _print_summary(summary: dict, errors: list) -> None:
-    print(f"done in {summary['wall_s']} s: {format_size(summary['bytes'])}, "
-          f"{summary['throughput_bytes_per_s'] / 1e6:.1f} MB/s, {summary['files_per_s']} files/s")
+def _print_summary(summary: dict, errors: list, header: bool = True) -> None:
+    if header:
+        print(f"done in {summary['wall_s']} s: {format_size(summary['bytes'])}, "
+              f"{summary['throughput_bytes_per_s'] / 1e6:.1f} MB/s, {summary['files_per_s']} files/s")
     for action, fields in summary["latency_us"].items():
-        for field in ("open_us", "io_us", "fsync_us", "close_us"):
+        for field in ("open_us", "first_us", "io_us", "fsync_us", "close_us"):
             if field in fields:
                 f = fields[field]
-                print(f"  {action:9s} {field[:-3]:5s}  p50 {f['p50']:>9} us   p99 {f['p99']:>9} us   "
+                label = {"first_us": "first", "io_us": "whole" if action == "read" else "io"}.get(field, field[:-3])
+                print(f"  {action:9s} {label:5s}  p50 {f['p50']:>9} us   p99 {f['p99']:>9} us   "
                       f"max {f['max']:>9} us   ({f['count']} ops)")
     if errors:
         print(f"{len(errors)} ERROR(S), first ones:")
@@ -201,7 +207,7 @@ def cmd_create(args) -> int:
 
 # ---------------------------------------------------------------- modify
 
-def _open(args) -> tuple:
+def _open(args, default_target=None) -> tuple:
     _fetch(args.out, args.dataset)
     store = Store(args.out, args.dataset)
     if not store.exists():
@@ -212,7 +218,7 @@ def _open(args) -> tuple:
     if meta.get("deleted"):
         raise Fail(f"dataset {args.dataset} was deleted on {meta['deleted']}")
     last = meta["generations"][-1]
-    target = args.target or last["target"]
+    target = args.target or default_target or last["target"]
     root = os.path.join(target, meta["id"])
     if not os.path.exists(os.path.join(root, MARKER)):
         raise Fail(f"{root} is not this dataset (no {MARKER}); check --target")
@@ -347,6 +353,79 @@ def cmd_verify(args) -> int:
     return 1 if rec.errors else 0
 
 
+def _drop_client_caches() -> str:
+    """Drop the Linux page, dentry and inode caches, so a pass reads from the file system.
+
+    Needs root: done directly as root, else with `sudo -n`. Returns "dropped" or why not.
+    """
+    if not os.path.exists("/proc/sys/vm/drop_caches"):
+        return "kept (no /proc/sys/vm/drop_caches on this system)"
+    os.sync()
+    try:
+        if os.geteuid() == 0:
+            with open("/proc/sys/vm/drop_caches", "w") as fh:
+                fh.write("3\n")
+        else:
+            r = subprocess.run(["sudo", "-n", "sh", "-c", "sync; echo 3 > /proc/sys/vm/drop_caches"],
+                               capture_output=True, text=True, timeout=120)
+            if r.returncode != 0:
+                return f"kept (could not drop: {r.stderr.strip()[:120] or 'sudo failed'})"
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return f"kept (could not drop: {exc})"
+    return "dropped"
+
+
+def cmd_read(args) -> int:
+    """Read the dataset's files, timing open, first byte, whole file and close of each, in passes."""
+    default = SIDE_MOUNTS.get(args.side) if args.side != "origin" else None
+    store, meta, target, root = _open(args, default_target=default)
+    gen = meta["generations"][-1]["gen"]
+    entries = [e for e in store.read_manifest(gen) if e["state"] == "present"]
+    if args.files or args.percent:
+        count = args.files or max(1, math.ceil(len(entries) * args.percent / 100))
+        rng = random.Random(f"{meta['spec']['seed']}/read/{args.seed}")
+        entries = sorted(rng.sample(entries, min(count, len(entries))), key=lambda e: e["idx"])
+    if args.order == "shuffled":
+        random.Random(f"{meta['spec']['seed']}/order/{args.seed}").shuffle(entries)
+    if not entries:
+        raise Fail("no files to read")
+    total = sum(e["size"] for e in entries)
+    jobs = args.jobs or meta["spec"]["writers"]["jobs"]
+    block = parse_size(args.block_size)
+    what = {"full": "open, first byte, whole file, close", "first": "open, first block, close",
+            "open": "open and close only, no data"}[args.mode]
+    print(f"reading {meta['id']}@g{gen} through {root} (side {args.side}): {len(entries)} files, "
+          f"{format_size(total)}, {args.passes} pass(es), {jobs} jobs, {what}")
+    stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
+    errors = 0
+    for p in range(1, args.passes + 1):
+        cache = "kept (--keep-client-cache)" if args.keep_client_cache else _drop_client_caches()
+        started = _now()
+        ops_name = f"reads/ops-read-{stamp}-{args.side}-p{p}.csv.gz"
+        tasks = [{**e, "action": "read"} for e in entries]
+        rec, summary = _run_pass(store, ops_name, root, tasks, meta["spec"], gen, jobs,
+                                 read_mode=args.mode, read_block=block)
+        open_sum = sum(int(r["open_us"]) for r in rec.rows.values() if r["open_us"] != "") / 1e6
+        record = {
+            "dataset": meta["id"], "gen": gen, "pass": p, "passes": args.passes, "mode": args.mode,
+            "started": started, "finished": _now(), **_where(target, args.side),
+            "client_cache": cache, "jobs": jobs, "block_size": block, "order": args.order,
+            "files": len(entries), "bytes_planned": total, "open_time_sum_s": round(open_sum, 3),
+            "ops": ops_name, **summary,
+        }
+        os.makedirs(store.path("reads"), exist_ok=True)
+        with open(store.path(f"reads/read-{stamp}-{args.side}-p{p}.json"), "w") as fh:
+            json.dump(record, fh, indent=2)
+            fh.write("\n")
+        print(f"pass {p}/{args.passes} (client cache {cache}): {format_size(summary['bytes'])} in "
+              f"{len(entries)} files in {summary['wall_s']} s, {summary['throughput_bytes_per_s'] / 1e6:.1f} MB/s, "
+              f"{summary['files_per_s']} files/s; open time summed over files {open_sum:.1f} s")
+        _print_summary(summary, rec.errors, header=False)
+        errors += len(rec.errors)
+    print(f"read records in {store.path('reads')}")
+    return 1 if errors else 0
+
+
 def cmd_delete(args) -> int:
     store, meta, target, root = _open(args)
     if not args.yes:
@@ -447,6 +526,25 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--side", required=True, choices=specmod.SIDES)
     p.add_argument("--target", help="mount to read through (default: where it was last written)")
     p.add_argument("--jobs", type=int)
+
+    p = sub.add_parser("read", help="time reading the dataset's files from either side: open, first byte, whole file, close")
+    p.set_defaults(func=cmd_read)
+    p.add_argument("dataset")
+    p.add_argument("--side", required=True, choices=specmod.SIDES,
+                   help="origin reads /mnt/fsxn/vol_origin, cache reads /mnt/fsxn/vol_cache (FlexCache)")
+    p.add_argument("--target", help="mount to read through (default: by --side)")
+    p.add_argument("--mode", choices=READ_MODES, default="full",
+                   help="full = open, first byte, whole file, close (default); first = first block only; "
+                        "open = open and close only")
+    p.add_argument("--passes", type=int, default=2,
+                   help="read the same files N times; the client cache is dropped before each (default: %(default)s)")
+    p.add_argument("--keep-client-cache", action="store_true", help="don't drop the client cache between passes")
+    p.add_argument("--files", type=int, help="read a random sample of N files")
+    p.add_argument("--percent", type=float, help="read a random sample of this share of the files")
+    p.add_argument("--seed", type=int, default=1, help="which sample and order (default: %(default)s)")
+    p.add_argument("--order", choices=("manifest", "shuffled"), default="manifest")
+    p.add_argument("--block-size", default="1MiB", help="read size per call (default: %(default)s)")
+    p.add_argument("--jobs", type=int, help="parallel reader processes (default: the dataset's writers)")
 
     p = sub.add_parser("delete", help="delete a dataset's files (its records are kept)")
     p.set_defaults(func=cmd_delete)

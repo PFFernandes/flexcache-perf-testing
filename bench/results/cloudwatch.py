@@ -15,6 +15,10 @@ default FlexCacheBench; dimensions Lab, Side and the ones listed):
     DatasetBytesWritten, DatasetFilesWritten       Dataset
     DatasetOpenLatency, DatasetWriteTime, DatasetCloseLatency (values, so CloudWatch can show
                                                    p50 / p99)  Dataset
+  from each read pass (bench-dataset read), per minute:
+    DatasetBytesRead, DatasetFilesRead             Dataset, Pass
+    DatasetReadOpenLatency, DatasetFirstByteLatency, DatasetReadTime (whole file),
+    DatasetReadCloseLatency (values: p50 / p99)    Dataset, Pass
 
 Only whole minutes in the past are sent, never older than CloudWatch accepts (2 weeks). A cursor
 file remembers what was sent, so nothing is sent twice; if a push fails, the cursor isn't moved
@@ -154,28 +158,37 @@ def values_counts(values, max_distinct=MAX_VALUES):
     return [k for k, _ in items], [float(c) for _, c in items]
 
 
-def dataset_entries(ops_path: str, dataset_id: str):
-    """Per-minute entries from a dataset's ops-g<N>.csv.gz (create/overwrite/append rows)."""
-    per_min = defaultdict(lambda: {"bytes": 0.0, "files": 0, "open": [], "io": [], "close": []})
+WRITE_METRICS = {"bytes": "DatasetBytesWritten", "files": "DatasetFilesWritten", "open": "DatasetOpenLatency",
+                 "io": "DatasetWriteTime", "close": "DatasetCloseLatency"}
+READ_METRICS = {"bytes": "DatasetBytesRead", "files": "DatasetFilesRead", "open": "DatasetReadOpenLatency",
+                "first": "DatasetFirstByteLatency", "io": "DatasetReadTime", "close": "DatasetReadCloseLatency"}
+
+
+def dataset_entries(ops_path: str, dataset_id: str, read_pass=None):
+    """Per-minute entries from a dataset's ops file: writes (ops-g<N>.csv.gz, create/overwrite/append
+    rows) or, with read_pass, one read pass (reads/ops-read-*.csv.gz, read rows)."""
+    actions = ("read",) if read_pass else ("create", "overwrite", "append")
+    names = READ_METRICS if read_pass else WRITE_METRICS
+    per_min = defaultdict(lambda: {"bytes": 0.0, "files": 0, "open": [], "first": [], "io": [], "close": []})
     with gzip.open(ops_path, "rt", newline="") as fh:
         for r in csv.DictReader(fh):
-            if r.get("error") or r.get("action") not in ("create", "overwrite", "append"):
+            if r.get("error") or r.get("action") not in actions:
                 continue
             m = per_min[int(float(r["ts"])) // 60 * 60]
             m["bytes"] += float(r["bytes"] or 0)
             m["files"] += 1
-            for key, field in (("open", "open_us"), ("io", "io_us"), ("close", "close_us")):
-                if r.get(field):
-                    m[key].append(float(r[field]))
-    dims = (("Dataset", dataset_id),)
+            for key in ("open", "first", "io", "close"):
+                if r.get(f"{key}_us"):
+                    m[key].append(float(r[f"{key}_us"]))
+    dims = (("Dataset", dataset_id),) + ((("Pass", str(read_pass)),) if read_pass else ())
     out = []
     for minute, m in sorted(per_min.items()):
-        out.append(("DatasetBytesWritten", "Bytes", dims, minute, {"Sum": m["bytes"]}))
-        out.append(("DatasetFilesWritten", "Count", dims, minute, {"Sum": float(m["files"])}))
-        for key, metric in (("open", "DatasetOpenLatency"), ("io", "DatasetWriteTime"), ("close", "DatasetCloseLatency")):
-            if m[key]:
+        out.append((names["bytes"], "Bytes", dims, minute, {"Sum": m["bytes"]}))
+        out.append((names["files"], "Count", dims, minute, {"Sum": float(m["files"])}))
+        for key in ("open", "first", "io", "close"):
+            if key in names and m[key]:
                 vals, counts = values_counts(m[key])
-                out.append((metric, "Microseconds", dims, minute, {"Values": vals, "Counts": counts}))
+                out.append((names[key], "Microseconds", dims, minute, {"Values": vals, "Counts": counts}))
     return out
 
 
@@ -250,12 +263,16 @@ def push(staging: str, *, lab: str, side: str, region: str, namespace: str = NAM
     data = [_datum(metric, unit, dims, minute, stats, base) for _key, metric, unit, dims, minute, stats in groups]
 
     markers = []
-    for ops in sorted(glob.glob(os.path.join(staging, "datasets", "*", "ops-g*.csv.gz"))):
+    ops_files = [(p, os.path.basename(os.path.dirname(p)), None)
+                 for p in sorted(glob.glob(os.path.join(staging, "datasets", "*", "ops-g*.csv.gz")))]
+    for p in sorted(glob.glob(os.path.join(staging, "datasets", "*", "reads", "ops-read-*.csv.gz"))):
+        pass_no = os.path.basename(p).split(".")[0].rsplit("-p", 1)[-1]
+        ops_files.append((p, os.path.basename(os.path.dirname(os.path.dirname(p))), pass_no))
+    for ops, ds, read_pass in ops_files:
         marker = os.path.join(os.path.dirname(ops), ".cloudwatch-" + os.path.basename(ops).split(".")[0])
         if os.path.exists(marker):
             continue
-        ds = os.path.basename(os.path.dirname(ops))
-        for metric, unit, dims, minute, values in dataset_entries(ops, ds):
+        for metric, unit, dims, minute, values in dataset_entries(ops, ds, read_pass):
             if now - MAX_AGE_S <= minute < int(now) // 60 * 60 + 60:
                 data.append(_datum(metric, unit, dims, minute, values, base))
         markers.append(marker)

@@ -27,9 +27,9 @@ setting changes; nothing is sent otherwise. On destroy `/opt/bench` and the comm
 dataset files on the volumes and `~/bench-results` stay. If a client is already gone, destroy just
 says so and continues.
 
-**Limit:** the bundle travels inside one SSM command, which `deploy.sh` keeps under 60 KB (about 45
-KB today). Above that it stops with a clear message; delivery through S3 comes with the Tooling
-module.
+**Size:** SSM limits the size of one command, so the bundle (about 58 KB today) travels in pieces of
+40 KB, one SSM command each, appended to a file on the client. The last command checks the SHA-256
+of the whole bundle (refusing a damaged one), unpacks it and installs.
 
 | Variable | Default | |
 |---|---|---|

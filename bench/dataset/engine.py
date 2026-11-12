@@ -7,8 +7,11 @@ One task = one file and one action:
     append     open(O_APPEND)       -> write -> [fsync] -> close
     rename / chmod / delete         one metadata call
     verify     stat, and for files with a checksum: open -> read all -> close
+    read       open(O_RDONLY) -> first read (first byte) -> rest of the file -> close
+               (read_mode "first": the first block only; "open": open + close, no data)
 
-Each task returns one row with the time of open, I/O, fsync and close in microseconds.
+Each task returns one row with the time of open, first byte (reads), I/O, fsync and close in
+microseconds. For a read, io_us is the whole file: from just after the open to the last byte.
 File contents come from the dataset seed, the generation and the file index, so the
 same spec always writes the same bytes.
 """
@@ -31,6 +34,7 @@ def _init(cfg: dict) -> None:
     _cfg = cfg
     rng = random.Random(f"{cfg['seed']}/dedupe")
     _cfg["dedupe_block"] = rng.randbytes(cfg["block_size"])
+    _cfg["read_buf"] = memoryview(bytearray(cfg.get("read_block") or cfg["block_size"]))
 
 
 def _blocks(rng: random.Random, length: int):
@@ -139,9 +143,33 @@ def _verify(task: dict, path: str, row: dict) -> None:
         row["error"] = "checksum mismatch"
 
 
+def _read(path: str, row: dict) -> None:
+    """Time open, first byte, the whole file and close of one file."""
+    mode, buf = _cfg.get("read_mode", "full"), _cfg["read_buf"]
+    t = time.perf_counter_ns()
+    fd = os.open(path, os.O_RDONLY)
+    row["open_us"] = _us(t)
+    try:
+        if mode != "open":
+            t = time.perf_counter_ns()
+            n = os.readv(fd, [buf])
+            row["first_us"] = _us(t)
+            total = n
+            if mode == "full":
+                while n > 0:
+                    n = os.readv(fd, [buf])
+                    total += n
+            row["io_us"] = _us(t)
+            row["bytes"] = total
+    finally:
+        t = time.perf_counter_ns()
+        os.close(fd)
+        row["close_us"] = _us(t)
+
+
 def _one(task: dict) -> dict:
     path = os.path.join(_cfg["root"], task["path"])
-    row = {"ts": time.time(), "idx": task["idx"], "action": task["action"], "open_us": "", "io_us": "",
+    row = {"ts": time.time(), "idx": task["idx"], "action": task["action"], "open_us": "", "first_us": "", "io_us": "",
            "fsync_us": "", "close_us": "", "bytes": 0, "error": "", "sha256": ""}
     try:
         action = task["action"]
@@ -149,6 +177,8 @@ def _one(task: dict) -> dict:
             _write(task, path, row)
         elif action == "verify":
             _verify(task, path, row)
+        elif action == "read":
+            _read(path, row)
         else:
             t = time.perf_counter_ns()
             if action == "rename":
@@ -169,9 +199,11 @@ def _chunk(tasks: list) -> list:
     return [_one(task) for task in tasks]
 
 
-def run(root: str, tasks: list, spec: dict, gen: int, jobs: int, resume: bool = False):
+def run(root: str, tasks: list, spec: dict, gen: int, jobs: int, resume: bool = False,
+        read_mode: str = "full", read_block: int = 0):
     """Run the tasks and yield one result row per task (in completion order)."""
     cfg = {
+        "read_mode": read_mode, "read_block": read_block,
         "root": root, "seed": spec["seed"], "gen": gen, "resume": resume,
         "block_size": spec["writers"]["block_size"], "fsync": spec["writers"]["fsync"],
         "compress_percent": spec["data"]["compress_percent"],

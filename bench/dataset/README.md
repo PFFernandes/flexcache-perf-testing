@@ -107,6 +107,38 @@ bench-dataset modify <id> --side cache --target $C --mode metadata  --percent 2 
 bench-dataset modify <id> --side cache --target $C --mode create    --total 50GiB --file-size 4MiB
 ```
 
+## Read (both sides)
+
+Times reading the dataset's files through either side: the origin client reads
+`/mnt/fsxn/vol_origin` (baseline), the cache client `/mnt/fsxn/vol_cache` (through FlexCache).
+
+```bash
+bench-dataset read <id> --side origin                       # 2 passes, whole files
+bench-dataset read <id> --side cache                        # same through FlexCache: pass 1 cold, pass 2 warm
+bench-dataset read <id> --side cache --mode open            # open + close only: metadata cost
+bench-dataset read <id> --side cache --mode first           # open, first block, close
+bench-dataset read <id> --side cache --files 1000 --passes 3 --order shuffled
+```
+
+| Per file | From | To |
+|---|---|---|
+| `open` | before `open()` | it returns |
+| `first byte` | after the open | the first read returns data |
+| `whole file` | after the open | the last byte is read (`--mode full`) |
+| `close` | before `close()` | it returns |
+
+Per pass: files, bytes, wall-clock time ("how long to read XX GB in N files"), MB/s, files/s,
+the open time summed over all files, and p50 / p90 / p99 / p99.9 / max of the four steps.
+
+- **Passes** (`--passes`, default 2): the client's page, dentry and inode caches are dropped before
+  each pass (needs `sudo`, which `ssm-user` and `ec2-user` have; recorded as `client_cache`).
+  `--keep-client-cache` keeps them. Through FlexCache, pass 1 is cold only if the cache hasn't read
+  these files before; use a fresh dataset or generation for a guaranteed cold read.
+- **Records:** `reads/read-<time>-<side>-p<N>.json` (summary) and `reads/ops-read-<time>-<side>-p<N>.csv.gz`
+  (one row per file) in the dataset's records. Each read is its own file, so both clients can read
+  the same dataset at the same time. `dataset.json` isn't changed.
+- `--block-size` (1 MiB) is the size of each read call; `--jobs` the parallel readers.
+
 ## Verify, list, delete
 
 ```bash

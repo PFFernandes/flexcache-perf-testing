@@ -9,17 +9,19 @@ the URL is in `./tf.sh 05-bench output dashboard`.
 |---|---|---|
 | 1 | Dataset write throughput (MB/s) and files per minute | bench, after each test |
 | 2 | Dataset open, write and close latency: p50 / p99 (µs) | bench, after each test |
-| 3 | Client CPU busy and memory used (%) | bench (Collector host metrics) |
-| 4 | Client network (bytes/s) | bench (Collector host metrics) |
-| 5 | NFS round-trip per NFS operation (ms) | bench (bench-probe) |
-| 6 | NFS operations per second | bench (bench-probe) |
-| 7 | NFS bytes per second, per mount | bench (bench-probe) |
-| 8 | EC2 network limits hit (ENA allowance counters) | bench (bench-probe) |
-| 9 | Ping to both file systems' NFS IPs (ms) | bench (bench-probe) |
-| 10 | FSx for ONTAP throughput per volume (MB/s) | AWS/FSx |
-| 11 | FSx for ONTAP read/write IOPS and latency (ms) | AWS/FSx |
-| 12 | FSx for ONTAP CPU and network utilization (%) | AWS/FSx |
-| 13 | EC2 client CPU (5-minute basic monitoring) | AWS/EC2 |
+| 3 | Dataset read (MB/s) and files per minute, per pass | bench, after each read |
+| 4 | Dataset read latency per pass: open, first byte, whole file (p50, p99), close (p99) | bench, after each read |
+| 5 | Client CPU busy and memory used (%) | bench (Collector host metrics) |
+| 6 | Client network (bytes/s) | bench (Collector host metrics) |
+| 7 | NFS round-trip per NFS operation (ms) | bench (bench-probe) |
+| 8 | NFS operations per second | bench (bench-probe) |
+| 9 | NFS bytes per second, per mount | bench (bench-probe) |
+| 10 | EC2 network limits hit (ENA allowance counters) | bench (bench-probe) |
+| 11 | Ping to both file systems' NFS IPs (ms) | bench (bench-probe) |
+| 12 | FSx for ONTAP throughput per volume (MB/s) | AWS/FSx |
+| 13 | FSx for ONTAP read/write IOPS and latency (ms) | AWS/FSx |
+| 14 | FSx for ONTAP CPU and network utilization (%) | AWS/FSx |
+| 15 | EC2 client CPU (5-minute basic monitoring) | AWS/EC2 |
 
 - **Bench metrics** (namespace `FlexCacheBench`) arrive **when a test ends**, as one-minute
   statistics; FSx and EC2 metrics are published by AWS continuously.
